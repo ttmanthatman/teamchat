@@ -1,0 +1,27 @@
+# 运行时生成的文件（不应提交）
+node_modules/
+database.sqlite
+database.sqlite-wal
+database.sqlite-shm
+.jwt_secret
+.vapid_keys
+
+# 用户上传内容
+uploads/
+avatars/
+backgrounds/
+
+# PM2
+ecosystem.config.js
+
+# 系统文件
+.DS_Store
+Thumbs.db
+*.log
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
