@@ -42,13 +42,13 @@
 **一行命令安装：**
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/你的用户名/teamchat/main/bushu.sh -o bushu.sh && sudo bash bushu.sh
+curl -fsSL https://raw.githubusercontent.com/ttmanthatman/teamchat/main/bushu.sh -o bushu.sh && sudo bash bushu.sh
 ```
 
 **或手动安装：**
 
 ```bash
-git clone https://github.com/你的用户名/teamchat.git
+git clone https://github.com/ttmanthatman/teamchat.git
 cd teamchat
 sudo bash bushu.sh
 ```
