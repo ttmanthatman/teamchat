@@ -1,7 +1,7 @@
 #!/bin/bash
 #===============================================================================
-# TeamChat 一键部署脚本 (全功能增强版 v7)
-# 新增: Web Push 推送通知 (Android/iOS PWA)
+# TeamChat 一键部署脚本 (全功能增强版 v7.1)
+# 新增: Web Push 推送通知 + 置顶通知功能
 #===============================================================================
 
 set -e
@@ -20,7 +20,7 @@ APP_DIR="/var/www/teamchat"
 
 print_header() {
     echo -e "\n${CYAN}================================================${NC}"
-    echo -e "${CYAN}  TeamChat 一键部署脚本 v7${NC}"
+    echo -e "${CYAN}  TeamChat 一键部署脚本 v7.1${NC}"
     echo -e "${CYAN}================================================${NC}\n"
 }
 
@@ -273,7 +273,7 @@ SWEOF
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/images/icon-192.svg">
   <title>团队聊天室</title>
-  <link rel="stylesheet" href="style.css?v=20260313e">
+  <link rel="stylesheet" href="style.css?v=20260315a">
 </head>
 <body>
   <div id="loginPage" class="page">
@@ -300,6 +300,17 @@ SWEOF
         <button onclick="logout()" class="icon-btn">🚪</button>
       </div>
     </header>
+    <!-- 置顶通知栏 -->
+    <div id="noticeBar" class="notice-bar hidden">
+      <div class="notice-bar-collapsed" onclick="toggleNoticeExpand()">
+        <span class="notice-icon">📌</span>
+        <span id="noticePreview" class="notice-preview">置顶通知</span>
+        <span id="noticeToggleIcon" class="notice-toggle">▼</span>
+      </div>
+      <div id="noticeFullContent" class="notice-full hidden">
+        <div id="noticeFullText" class="notice-full-text"></div>
+      </div>
+    </div>
     <div id="messages" class="messages"><div class="load-more" onclick="loadMoreMessages()">加载更多</div></div>
     <div class="input-area">
       <button onclick="document.getElementById('fileInput').click()" class="attach-btn">📎</button>
@@ -361,12 +372,28 @@ SWEOF
           </select>
           <p id="timezoneMsg" style="font-size:12px;color:#666;margin-top:4px"></p>
         </div>
+        <button onclick="showNoticeAdmin()" class="admin-btn">📌 置顶通知</button>
         <button onclick="showAppearance()" class="admin-btn">🎨 外观定制</button>
         <button onclick="showUserManagement()" class="admin-btn">👥 用户管理</button>
         <button onclick="showBackup()" class="admin-btn">💾 备份/还原</button>
         <button onclick="showDeleteMessages()" class="admin-btn danger">🗑️ 删除记录</button>
       </div>
       <button onclick="closeSettings()" class="close-btn">关闭</button>
+    </div>
+  </div>
+
+  <!-- 置顶通知管理弹窗 -->
+  <div id="noticeModal" class="modal hidden">
+    <div class="modal-content">
+      <h3>📌 置顶通知管理</h3>
+      <div class="settings-section">
+        <label class="field-label">通知内容</label>
+        <textarea id="noticeContentInput" placeholder="输入置顶通知内容..." rows="5" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:14px;resize:vertical;font-family:inherit"></textarea>
+      </div>
+      <button onclick="saveNotice()" style="background:#667eea">发布置顶通知</button>
+      <button onclick="clearNotice()" class="danger-btn">撤下置顶通知</button>
+      <p id="noticeMsg" style="text-align:center;margin-top:8px;font-size:13px"></p>
+      <button onclick="closeNoticeModal()" class="close-btn">关闭</button>
     </div>
   </div>
 
@@ -489,7 +516,7 @@ SWEOF
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="app.js?v=20260313e"></script>
+  <script src="app.js?v=20260315a"></script>
 </body>
 </html>
 HTMLEOF
@@ -511,6 +538,16 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .header-left h2{font-size:18px;color:#333}.header-left span{font-size:12px;color:#666}
 .header-right{display:flex;align-items:center;gap:10px}.header-right span{font-size:14px;color:#667eea}
 .icon-btn{background:none;border:none;font-size:20px;cursor:pointer;padding:5px}
+/* 置顶通知栏 */
+.notice-bar{flex-shrink:0;background:linear-gradient(135deg,#fff8e1 0%,#fff3c4 100%);border-bottom:1px solid #f0d060;box-shadow:0 2px 6px rgba(0,0,0,.06);z-index:10;overflow:hidden;transition:all .3s ease}
+.notice-bar-collapsed{display:flex;align-items:center;padding:10px 16px;cursor:pointer;gap:8px;min-height:42px}
+.notice-icon{font-size:16px;flex-shrink:0}
+.notice-preview{flex:1;font-size:13px;color:#8b6914;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.notice-toggle{font-size:10px;color:#b8860b;flex-shrink:0;transition:transform .3s ease}
+.notice-toggle.expanded{transform:rotate(180deg)}
+.notice-full{padding:0 16px 12px 40px;animation:noticeSlideDown .25s ease}
+.notice-full-text{font-size:14px;color:#5d4e14;line-height:1.7;white-space:pre-wrap;word-break:break-word;max-height:200px;overflow-y:auto;padding:8px 12px;background:rgba(255,255,255,.5);border-radius:8px}
+@keyframes noticeSlideDown{from{opacity:0;max-height:0}to{opacity:1;max-height:300px}}
 .messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;min-height:0;background-color:#f5f5f5;background-position:center;transition:background-color .3s}
 .load-more{text-align:center;padding:12px;color:#667eea;cursor:pointer;background:rgba(255,255,255,.85);border-radius:8px;margin-bottom:10px}
 .message{max-width:75%;padding:10px 14px;border-radius:16px;position:relative;word-wrap:break-word;display:flex;gap:10px;align-items:flex-start}
@@ -594,10 +631,75 @@ const API_BASE='';
 let currentUser=null,socket=null,oldestMessageId=null,isLoading=false;
 let replyingToMsg=null,onlineUsernames=new Set(),chatTimezone='Asia/Shanghai',appearanceData={};
 let pushSubscription=null;
+let noticeExpanded=false;
 
 function escapeHtml(t){const d=document.createElement('div');d.appendChild(document.createTextNode(t));return d.innerHTML}
 function escapeAttr(t){return String(t).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function authHeaders(x){const h={'Authorization':'Bearer '+(currentUser?currentUser.token:'')};return Object.assign(h,x||{})}
+
+// ===== 置顶通知 =====
+async function loadNotice(){
+  try{
+    const r=await fetch(API_BASE+'/api/settings/notice');
+    if(!r.ok)return;
+    const d=await r.json();
+    applyNotice(d);
+  }catch(e){}
+}
+
+function applyNotice(d){
+  const bar=document.getElementById('noticeBar');
+  if(d&&d.enabled&&d.content&&d.content.trim()){
+    document.getElementById('noticePreview').textContent=d.content.replace(/\n/g,' ').substring(0,60)+(d.content.length>60?'...':'');
+    document.getElementById('noticeFullText').textContent=d.content;
+    bar.classList.remove('hidden');
+    noticeExpanded=false;
+    document.getElementById('noticeFullContent').classList.add('hidden');
+    document.getElementById('noticeToggleIcon').classList.remove('expanded');
+  }else{
+    bar.classList.add('hidden');
+  }
+}
+
+function toggleNoticeExpand(){
+  noticeExpanded=!noticeExpanded;
+  const full=document.getElementById('noticeFullContent');
+  const icon=document.getElementById('noticeToggleIcon');
+  if(noticeExpanded){full.classList.remove('hidden');icon.classList.add('expanded')}
+  else{full.classList.add('hidden');icon.classList.remove('expanded')}
+}
+
+function showNoticeAdmin(){
+  // 加载当前通知内容
+  fetch(API_BASE+'/api/settings/notice').then(r=>r.json()).then(d=>{
+    document.getElementById('noticeContentInput').value=d.content||'';
+  }).catch(()=>{});
+  document.getElementById('noticeMsg').textContent='';
+  document.getElementById('noticeModal').classList.remove('hidden');
+}
+function closeNoticeModal(){document.getElementById('noticeModal').classList.add('hidden')}
+
+async function saveNotice(){
+  const content=document.getElementById('noticeContentInput').value.trim();
+  const m=document.getElementById('noticeMsg');
+  if(!content){m.textContent='请输入通知内容';m.style.color='#dc2626';return}
+  try{
+    const r=await fetch(API_BASE+'/api/settings/notice',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({content:content,enabled:true})});
+    const d=await r.json();
+    if(d.success){m.textContent='✅ 置顶通知已发布';m.style.color='#10b981';setTimeout(()=>{m.textContent=''},3000)}
+    else{m.textContent=d.message||'保存失败';m.style.color='#dc2626'}
+  }catch(e){m.textContent='保存失败';m.style.color='#dc2626'}
+}
+
+async function clearNotice(){
+  const m=document.getElementById('noticeMsg');
+  try{
+    const r=await fetch(API_BASE+'/api/settings/notice',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({content:'',enabled:false})});
+    const d=await r.json();
+    if(d.success){document.getElementById('noticeContentInput').value='';m.textContent='✅ 置顶通知已撤下';m.style.color='#10b981';setTimeout(()=>{m.textContent=''},3000)}
+    else{m.textContent=d.message||'操作失败';m.style.color='#dc2626'}
+  }catch(e){m.textContent='操作失败';m.style.color='#dc2626'}
+}
 
 // ===== 推送通知 =====
 let swRegistration=null;
@@ -629,7 +731,6 @@ function detectPushSupport(){
     btnEl.textContent='尝试开启推送';
     return;
   }
-  // 检查当前订阅状态
   checkCurrentSubscription();
 }
 
@@ -670,7 +771,6 @@ async function checkCurrentSubscription(){
 
 async function togglePushNotification(){
   if(pushSubscription){
-    // 取消订阅
     try{
       await pushSubscription.unsubscribe();
       await fetch(API_BASE+'/api/push/unsubscribe',{
@@ -682,9 +782,7 @@ async function togglePushNotification(){
       checkCurrentSubscription();
     }catch(e){alert('取消推送失败')}
   }else{
-    // 订阅
     try{
-      // 获取 VAPID 公钥
       const keyRes=await fetch(API_BASE+'/api/push/vapid-key');
       const keyData=await keyRes.json();
       if(!keyData.publicKey){alert('服务器推送未配置');return}
@@ -701,7 +799,6 @@ async function togglePushNotification(){
         applicationServerKey:urlBase64ToUint8Array(keyData.publicKey)
       });
 
-      // 发送到服务器存储
       await fetch(API_BASE+'/api/push/subscribe',{
         method:'POST',
         headers:authHeaders({'Content-Type':'application/json'}),
@@ -730,6 +827,7 @@ function urlBase64ToUint8Array(base64String){
 document.addEventListener('DOMContentLoaded',async()=>{
   await initServiceWorker();
   await loadAppearancePublic();
+  await loadNotice();
   const token=localStorage.getItem('token');
   const username=localStorage.getItem('username');
   if(token&&username){
@@ -792,6 +890,7 @@ function initChat(){
   document.getElementById('currentAvatar').src=getAvatarUrl(currentUser.avatar);
   if(currentUser.isAdmin)document.getElementById('adminSection').classList.remove('hidden');
   loadTimezone();
+  loadNotice();
   detectPushSupport();
 
   socket=io({auth:{token:currentUser.token}});
@@ -804,6 +903,7 @@ function initChat(){
   socket.on('kicked',(d)=>showKickedOverlay(d.message||'您的账号已在其他设备登录'));
   socket.on('timezoneChanged',(d)=>{if(d.timezone){chatTimezone=d.timezone;const s=document.getElementById('timezoneSelect');if(s)s.value=chatTimezone;refreshMessageTimes()}});
   socket.on('appearanceChanged',(d)=>{appearanceData=d;applyAppearance(d)});
+  socket.on('noticeChanged',(d)=>{applyNotice(d)});
   loadMessages();
 }
 
@@ -1022,7 +1122,7 @@ write_app_files() {
     cat > "$APP_DIR/package.json" <<'PKGEOF'
 {
   "name": "teamchat",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "main": "server.js",
   "dependencies": {
     "express": "^4.18.2",
@@ -1099,7 +1199,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, endpoint TEXT UNIQUE NOT NULL, keys_p256dh TEXT NOT NULL, keys_auth TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE);
 `);
 
-const defaultSettings = { timezone:"Asia/Shanghai", login_title:"团队聊天室", chat_title:"团队聊天", send_text:"发送", send_color:"#667eea", bg_type:"color", bg_color:"#f5f5f5", bg_image:"", bg_mode:"cover" };
+const defaultSettings = { timezone:"Asia/Shanghai", login_title:"团队聊天室", chat_title:"团队聊天", send_text:"发送", send_color:"#667eea", bg_type:"color", bg_color:"#f5f5f5", bg_image:"", bg_mode:"cover", pinned_notice:"", pinned_notice_enabled:"0" };
 const insSetting = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
 for (const [k, v] of Object.entries(defaultSettings)) insSetting.run(k, v);
 
@@ -1163,7 +1263,6 @@ app.post("/api/push/unsubscribe",authMiddleware,(req,res)=>{
   res.json({success:true});
 });
 
-// 发送推送给除了发送者之外的所有订阅者
 function sendPushToOthers(senderUserId, senderName, messageText){
   const subs=db.prepare("SELECT * FROM push_subscriptions WHERE user_id != ?").all(senderUserId);
   const chatTitle=getSetting("chat_title")||"TeamChat";
@@ -1177,13 +1276,37 @@ function sendPushToOthers(senderUserId, senderName, messageText){
   for(const sub of subs){
     const pushSub={endpoint:sub.endpoint,keys:{p256dh:sub.keys_p256dh,auth:sub.keys_auth}};
     webpush.sendNotification(pushSub,payload).catch(err=>{
-      // 410 Gone 或 404 表示订阅失效，清理
       if(err.statusCode===410||err.statusCode===404){
         db.prepare("DELETE FROM push_subscriptions WHERE id=?").run(sub.id);
       }
     });
   }
 }
+
+// ===== 置顶通知 API =====
+app.get("/api/settings/notice",(req,res)=>{
+  res.json({
+    content:getSetting("pinned_notice"),
+    enabled:getSetting("pinned_notice_enabled")==="1"
+  });
+});
+
+app.post("/api/settings/notice",authMiddleware,adminMiddleware,(req,res)=>{
+  const{content,enabled}=req.body;
+  if(typeof content==="string"){
+    const trimmed=content.substring(0,2000);
+    setSetting("pinned_notice",trimmed);
+  }
+  if(typeof enabled==="boolean"){
+    setSetting("pinned_notice_enabled",enabled?"1":"0");
+  }
+  const noticeData={
+    content:getSetting("pinned_notice"),
+    enabled:getSetting("pinned_notice_enabled")==="1"
+  };
+  io.emit("noticeChanged",noticeData);
+  res.json({success:true});
+});
 
 // ===== 业务路由 =====
 app.post("/api/register",authMiddleware,adminMiddleware,async(req,res)=>{
@@ -1224,7 +1347,6 @@ app.post("/api/upload",authMiddleware,upload.single("file"),(req,res)=>{
   const result=db.prepare("INSERT INTO messages (user_id,username,content,type,file_name,file_path,file_size) VALUES (?,?,?,?,?,?,?)").run(req.user.userId,user.username,req.body.content||"",type,req.file.originalname,req.file.filename,req.file.size);
   const message={id:result.lastInsertRowid,username:user.username,nickname:user.nickname,avatar:user.avatar,content:req.body.content||"",type,file_name:req.file.originalname,file_path:req.file.filename,file_size:req.file.size,created_at:new Date().toISOString()};
   io.emit("newMessage",message);
-  // 推送：文件/图片消息
   const pushText=type==="image"?"[图片] "+req.file.originalname:"[文件] "+req.file.originalname;
   sendPushToOthers(req.user.userId,user.nickname||user.username,pushText);
   res.json({success:true,filePath:req.file.filename});
@@ -1270,7 +1392,6 @@ app.post("/api/users/import",authMiddleware,adminMiddleware,async(req,res)=>{
   const{users}=req.body;if(!Array.isArray(users))return res.json({success:false,message:"格式错误"});
   let created=0,skipped=0;
   for(const u of users){if(!u.username||!/^[a-zA-Z0-9_.\-]+$/.test(u.username)){skipped++;continue}if(db.prepare("SELECT id FROM users WHERE username=?").get(u.username)){skipped++;continue}
-  // 优先使用导出的哈希密码(password_hash)，其次明文password再hash，最后随机密码
   let finalHash;
   if(u.password_hash&&/^\$2[aby]?\$/.test(u.password_hash)){finalHash=u.password_hash}
   else{const pw=u.password||crypto.randomBytes(8).toString("hex");finalHash=await bcrypt.hash(pw,10)}
@@ -1318,7 +1439,6 @@ io.on("connection",(socket)=>{
     const user=db.prepare("SELECT nickname,avatar FROM users WHERE id=?").get(socket.user.userId);
     const message={id:result.lastInsertRowid,username:socket.user.username,nickname:user?user.nickname:socket.user.username,avatar:user?user.avatar:null,content:trimmed,type:"text",reply_to:safeReplyTo,created_at:new Date().toISOString()};
     io.emit("newMessage",message);
-    // 触发推送通知
     sendPushToOthers(socket.user.userId, user?user.nickname:socket.user.username, trimmed);
   });
 
@@ -1355,7 +1475,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT,
 CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,username TEXT NOT NULL,content TEXT,type TEXT DEFAULT "text",file_name TEXT,file_path TEXT,file_size INTEGER,reply_to INTEGER,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,endpoint TEXT UNIQUE NOT NULL,keys_p256dh TEXT NOT NULL,keys_auth TEXT NOT NULL,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE);`);
-const defs={timezone:"Asia/Shanghai",login_title:"团队聊天室",chat_title:"团队聊天",send_text:"发送",send_color:"#667eea",bg_type:"color",bg_color:"#f5f5f5",bg_image:"",bg_mode:"cover"};
+const defs={timezone:"Asia/Shanghai",login_title:"团队聊天室",chat_title:"团队聊天",send_text:"发送",send_color:"#667eea",bg_type:"color",bg_color:"#f5f5f5",bg_image:"",bg_mode:"cover",pinned_notice:"",pinned_notice_enabled:"0"};
 const ins=db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)");for(const[k,v] of Object.entries(defs))ins.run(k,v);
 const au=process.env.ADMIN_USER_ENV,ap=process.env.ADMIN_PASS_ENV,h=bcrypt.hashSync(ap,10);
 try{db.prepare("INSERT INTO users (username,password,is_admin) VALUES (?,?,1)").run(au,h);console.log("✅ 管理员已创建")}catch(e){db.prepare("UPDATE users SET password=?,is_admin=1 WHERE username=?").run(h,au);console.log("✅ 管理员密码已重置")}
