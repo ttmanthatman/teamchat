@@ -265,7 +265,7 @@ SWEOF
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="TeamChat">
@@ -273,7 +273,7 @@ SWEOF
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/images/icon-192.svg">
   <title>团队聊天室</title>
-  <link rel="stylesheet" href="style.css?v=20260315a">
+  <link rel="stylesheet" href="style.css?v=20260316a">
 </head>
 <body>
   <div id="loginPage" class="page">
@@ -388,7 +388,7 @@ SWEOF
       <h3>📌 置顶通知管理</h3>
       <div class="settings-section">
         <label class="field-label">通知内容</label>
-        <textarea id="noticeContentInput" placeholder="输入置顶通知内容..." rows="5" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:14px;resize:vertical;font-family:inherit"></textarea>
+        <textarea id="noticeContentInput" placeholder="输入置顶通知内容..." rows="5" style="width:100%;padding:12px;border:1px solid #ddd;border-radius:8px;font-size:16px;resize:vertical;font-family:inherit"></textarea>
       </div>
       <button onclick="saveNotice()" style="background:#667eea">发布置顶通知</button>
       <button onclick="clearNotice()" class="danger-btn">撤下置顶通知</button>
@@ -516,7 +516,7 @@ SWEOF
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="app.js?v=20260315a"></script>
+  <script src="app.js?v=20260316a"></script>
 </body>
 </html>
 HTMLEOF
@@ -524,7 +524,8 @@ HTMLEOF
     # ===== style.css =====
     cat > "$APP_DIR/public/style.css" <<'CSSEOF'
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;height:100vh;overflow:hidden}
+html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;height:100vh;overflow:hidden;-webkit-overflow-scrolling:touch}
 .page{width:100%;height:100vh;display:flex;flex-direction:column}
 .hidden{display:none!important}
 #loginPage{justify-content:center;align-items:center;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)}
@@ -561,7 +562,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .message .file{display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(0,0,0,.05);border-radius:8px;margin-top:8px;cursor:pointer}
 .message a{color:inherit;text-decoration:underline}
 .input-area{background:#fff;padding:12px 16px;display:flex;gap:10px;align-items:center;box-shadow:0 -2px 8px rgba(0,0,0,.05);flex-shrink:0}
-.input-area input[type="text"]{flex:1;padding:12px 16px;border:1px solid #ddd;border-radius:24px;font-size:15px;outline:none}
+.input-area input[type="text"]{flex:1;padding:12px 16px;border:1px solid #ddd;border-radius:24px;font-size:16px;outline:none}
 .attach-btn,.send-btn{height:44px;border-radius:22px;border:none;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .attach-btn{width:44px;background:#f0f0f0;font-size:20px}.send-btn{min-width:44px;padding:0 18px;background:#667eea;color:#fff;font-weight:500;white-space:nowrap}
 .reply-box{background:#f0f2ff;padding:8px 16px;display:flex;align-items:center;gap:8px;font-size:13px;color:#555;border-left:3px solid #667eea}
@@ -578,7 +579,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .modal-wide{max-width:520px}
 .modal-content h3{margin-bottom:20px;text-align:center}
 .modal-content h4{margin:16px 0 10px;font-size:14px;color:#666}
-.modal-content input[type="text"],.modal-content input[type="password"],.modal-content input[type="date"],.modal-content select{width:100%;padding:12px;margin-bottom:10px;border:1px solid #ddd;border-radius:8px;font-size:14px}
+.modal-content input[type="text"],.modal-content input[type="password"],.modal-content input[type="date"],.modal-content select{width:100%;padding:12px;margin-bottom:10px;border:1px solid #ddd;border-radius:8px;font-size:16px}
 .modal-content button{width:100%;padding:12px;background:#667eea;color:#fff;border:none;border-radius:8px;font-size:14px;cursor:pointer;margin-bottom:10px}
 .modal-content button.danger{background:#dc2626}.modal-content button.admin-btn{background:#10b981}
 .close-btn{background:#f0f0f0!important;color:#333!important}
@@ -587,7 +588,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .settings-section{margin-bottom:20px;padding-bottom:20px;border-bottom:1px solid #eee}
 .field-label{display:block;font-size:13px;color:#555;margin-bottom:6px;font-weight:500}
 .timezone-setting{margin-bottom:14px}.timezone-setting label{display:block;font-size:13px;color:#555;margin-bottom:6px}
-.timezone-setting select{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px;background:#fff}
+.timezone-setting select{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px;background:#fff}
 .add-user{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
 .user-list{max-height:200px;overflow-y:auto}
 .user-item{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#f9f9f9;border-radius:8px;margin-bottom:8px}
@@ -824,6 +825,28 @@ function urlBase64ToUint8Array(base64String){
 }
 
 // ===== 页面加载 =====
+// iOS PWA 键盘收起后视口归位修复
+(function(){
+  var isIos=/iPad|iPhone|iPod/.test(navigator.userAgent);
+  if(!isIos)return;
+  document.addEventListener('focusout',function(){
+    setTimeout(function(){window.scrollTo(0,0)},100);
+  });
+  if(window.visualViewport){
+    var lastHeight=window.visualViewport.height;
+    window.visualViewport.addEventListener('resize',function(){
+      var newHeight=window.visualViewport.height;
+      if(newHeight>lastHeight){
+        // 键盘收起
+        setTimeout(function(){window.scrollTo(0,0)},50);
+        document.body.style.height='100vh';
+        setTimeout(function(){document.body.style.height=''},100);
+      }
+      lastHeight=newHeight;
+    });
+  }
+})();
+
 document.addEventListener('DOMContentLoaded',async()=>{
   await initServiceWorker();
   await loadAppearancePublic();
