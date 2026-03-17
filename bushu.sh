@@ -1519,12 +1519,92 @@ setup_service() {
     echo -e "${GREEN}✅ 服务配置完成${NC}"
 }
 
+detect_existing_ssl() {
+    local domain="$1"
+    # 检查是否存在 Let's Encrypt 证书
+    if [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ] && [ -f "/etc/letsencrypt/live/${domain}/privkey.pem" ]; then
+        return 0
+    fi
+    # 检查通配符或其他证书名
+    if [ -f /etc/nginx/conf.d/teamchat.conf ] && grep -q "ssl_certificate" /etc/nginx/conf.d/teamchat.conf 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+get_existing_ssl_domain() {
+    # 从现有 nginx 配置中提取 SSL 域名
+    if [ -f /etc/nginx/conf.d/teamchat.conf ]; then
+        local d
+        d=$(grep -oP 'ssl_certificate\s+/etc/letsencrypt/live/\K[^/]+' /etc/nginx/conf.d/teamchat.conf 2>/dev/null | head -1)
+        if [ -n "$d" ]; then echo "$d"; return 0; fi
+        d=$(grep -oP 'server_name\s+\K[^;]+' /etc/nginx/conf.d/teamchat.conf 2>/dev/null | head -1 | awk '{print $1}')
+        if [ -n "$d" ] && [ "$d" != "_" ]; then echo "$d"; return 0; fi
+    fi
+    return 1
+}
+
 generate_nginx_config() {
     local domain="$1" use_ssl="$2" port
     port=$(get_current_port)
     [ -f /etc/nginx/sites-enabled/default ] && rm -f /etc/nginx/sites-enabled/default
     [ -f /etc/nginx/conf.d/default.conf ] && mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.bak
 
+    # 检查是否有现有 SSL 证书可复用
+    if [ "$use_ssl" = "yes" ] && detect_existing_ssl "$domain"; then
+        echo -e "${GREEN}✅ 检测到域名 ${domain} 的现有 SSL 证书，直接复用${NC}"
+        # 只更新 proxy_pass 端口，保留 SSL 配置
+        if [ -f /etc/nginx/conf.d/teamchat.conf ] && grep -q "ssl_certificate" /etc/nginx/conf.d/teamchat.conf 2>/dev/null; then
+            sed -i "s|proxy_pass http://127.0.0.1:[0-9]*|proxy_pass http://127.0.0.1:$port|g" /etc/nginx/conf.d/teamchat.conf
+            sed -i "s|server_name .*;|server_name $domain;|g" /etc/nginx/conf.d/teamchat.conf
+            if nginx -t 2>&1; then
+                systemctl enable nginx 2>/dev/null || true; systemctl reload nginx
+                echo -e "${GREEN}✅ Nginx SSL 配置已更新（复用现有证书）${NC}"
+                return 0
+            else
+                echo -e "${YELLOW}现有配置更新失败，将重新生成...${NC}"
+            fi
+        fi
+        # 现有配置文件格式异常，用证书路径重新生成完整 SSL 配置
+        if [ -f "/etc/letsencrypt/live/${domain}/fullchain.pem" ]; then
+            cat > /etc/nginx/conf.d/teamchat.conf <<EOF
+server {
+    listen 80;
+    server_name $domain;
+    return 301 https://\$host\$request_uri;
+}
+server {
+    listen 443 ssl;
+    server_name $domain;
+    client_max_body_size 50M;
+    ssl_certificate /etc/letsencrypt/live/$domain/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$domain/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    location / {
+        proxy_pass http://127.0.0.1:$port;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+EOF
+            if nginx -t 2>&1; then
+                systemctl enable nginx 2>/dev/null || true; systemctl restart nginx
+                systemctl enable certbot.timer 2>/dev/null || true; systemctl start certbot.timer 2>/dev/null || true
+                echo -e "${GREEN}✅ Nginx SSL 配置已重新生成（复用现有证书）${NC}"
+                return 0
+            fi
+        fi
+    fi
+
+    # 没有现有证书，写入基础 HTTP 配置
     cat > /etc/nginx/conf.d/teamchat.conf <<EOF
 server {
     listen 80;
@@ -1566,11 +1646,29 @@ do_install() {
     while true; do printf "  管理员密码 [admin123]: "; read -r input; ADMIN_PASS=${input:-admin123}; [ ${#ADMIN_PASS} -ge 6 ] && break; echo -e "${RED}密码不能小于6位${NC}"; done
     while true; do printf "  服务端口 [3000]: "; read -r input; PORT=${input:-3000}; [[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] && break; echo -e "${RED}端口无效${NC}"; done
 
-    echo ""; printf "是否配置 SSL/HTTPS? (y/n) [n]: "; read -r use_ssl
-    local domain=""
-    if [ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ]; then
-        echo -n "  请输入域名: "; read domain; while [ -z "$domain" ]; do echo -n "  域名不能为空: "; read domain; done
-    else domain=$DOMAIN; fi
+    # 检测现有 SSL 配置
+    local existing_ssl_domain="" use_ssl="" domain=""
+    existing_ssl_domain=$(get_existing_ssl_domain 2>/dev/null) || true
+
+    if [ -n "$existing_ssl_domain" ] && detect_existing_ssl "$existing_ssl_domain"; then
+        echo ""
+        echo -e "${GREEN}✅ 检测到现有 SSL 证书: ${existing_ssl_domain}${NC}"
+        printf "是否沿用此 HTTPS 配置? (y/n) [y]: "; read -r reuse_ssl
+        if [ "$reuse_ssl" != "n" ] && [ "$reuse_ssl" != "N" ]; then
+            use_ssl="y"; domain="$existing_ssl_domain"
+            echo -e "${GREEN}  → 将复用现有证书，无需重新申请${NC}"
+        else
+            echo ""; printf "是否配置新的 SSL/HTTPS? (y/n) [n]: "; read -r use_ssl
+            if [ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ]; then
+                echo -n "  请输入域名: "; read domain; while [ -z "$domain" ]; do echo -n "  域名不能为空: "; read domain; done
+            else domain=$DOMAIN; fi
+        fi
+    else
+        echo ""; printf "是否配置 SSL/HTTPS? (y/n) [n]: "; read -r use_ssl
+        if [ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ]; then
+            echo -n "  请输入域名: "; read domain; while [ -z "$domain" ]; do echo -n "  域名不能为空: "; read domain; done
+        else domain=$DOMAIN; fi
+    fi
 
     echo ""
     echo "==========================================="
@@ -1630,6 +1728,19 @@ do_ssl() {
     local port; port=$(get_current_port)
     [ -f /etc/nginx/sites-enabled/default ]&&rm -f /etc/nginx/sites-enabled/default
     [ -f /etc/nginx/conf.d/default.conf ]&&mv /etc/nginx/conf.d/default.conf /etc/nginx/conf.d/default.conf.bak
+
+    # 检查是否已有该域名的证书
+    if detect_existing_ssl "$domain"; then
+        echo -e "${GREEN}✅ 检测到域名 ${domain} 的现有 SSL 证书${NC}"
+        printf "是否复用现有证书? (y/n) [y]: "; read -r reuse
+        if [ "$reuse" != "n" ]&&[ "$reuse" != "N" ]; then
+            generate_nginx_config "$domain" "yes"
+            echo -e "${GREEN}✅ SSL 配置完成（复用现有证书）！https://${domain}${NC}"
+            return 0
+        fi
+        echo -e "${YELLOW}将重新申请证书...${NC}"
+    fi
+
     cat > /etc/nginx/conf.d/teamchat.conf <<EOF
 server { listen 80; server_name $domain; client_max_body_size 50M;
   location / { proxy_pass http://127.0.0.1:$port; proxy_http_version 1.1; proxy_set_header Upgrade \$http_upgrade; proxy_set_header Connection "upgrade"; proxy_set_header Host \$host; proxy_set_header X-Real-IP \$remote_addr; proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for; proxy_set_header X-Forwarded-Proto \$scheme; proxy_read_timeout 3600s; proxy_send_timeout 3600s; } }
