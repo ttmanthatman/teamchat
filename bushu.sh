@@ -1,7 +1,7 @@
 #!/bin/bash
 #===============================================================================
-# TeamChat 一键部署脚本 (全功能增强版 v7.1)
-# 新增: Web Push 推送通知 + 置顶通知功能
+# TeamChat 一键部署脚本 (全功能增强版 v7.2)
+# 新增: Web Push 推送通知（似乎还是不能用） + 置顶通知功能 + 缩放修正 + UTC时间修正
 #===============================================================================
 
 set -e
@@ -20,7 +20,7 @@ APP_DIR="/var/www/teamchat"
 
 print_header() {
     echo -e "\n${CYAN}================================================${NC}"
-    echo -e "${CYAN}  TeamChat 一键部署脚本 v7.1${NC}"
+    echo -e "${CYAN}  TeamChat 一键部署脚本 v7.2${NC}"
     echo -e "${CYAN}================================================${NC}\n"
 }
 
@@ -273,7 +273,7 @@ SWEOF
   <link rel="manifest" href="/manifest.json">
   <link rel="apple-touch-icon" href="/images/icon-192.svg">
   <title>团队聊天室</title>
-  <link rel="stylesheet" href="style.css?v=20260316a">
+  <link rel="stylesheet" href="style.css?v=20260317a">
 </head>
 <body>
   <div id="loginPage" class="page">
@@ -293,6 +293,7 @@ SWEOF
       <div class="header-left">
         <h2 id="chatTitle">团队聊天</h2>
         <span id="onlineCount">0 人在线</span>
+        <span id="tzIndicator" class="tz-indicator" title="消息显示时区"></span>
       </div>
       <div class="header-right">
         <span id="currentUser"></span>
@@ -516,7 +517,7 @@ SWEOF
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="app.js?v=20260316a"></script>
+  <script src="app.js?v=20260317a"></script>
 </body>
 </html>
 HTMLEOF
@@ -589,6 +590,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .field-label{display:block;font-size:13px;color:#555;margin-bottom:6px;font-weight:500}
 .timezone-setting{margin-bottom:14px}.timezone-setting label{display:block;font-size:13px;color:#555;margin-bottom:6px}
 .timezone-setting select{width:100%;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:16px;background:#fff}
+.tz-indicator{font-size:11px;color:rgba(255,255,255,.7);background:rgba(0,0,0,.15);padding:2px 8px;border-radius:10px;white-space:nowrap}
 .add-user{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
 .user-list{max-height:200px;overflow-y:auto}
 .user-item{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#f9f9f9;border-radius:8px;margin-bottom:8px}
@@ -637,6 +639,14 @@ let noticeExpanded=false;
 function escapeHtml(t){const d=document.createElement('div');d.appendChild(document.createTextNode(t));return d.innerHTML}
 function escapeAttr(t){return String(t).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
 function authHeaders(x){const h={'Authorization':'Bearer '+(currentUser?currentUser.token:'')};return Object.assign(h,x||{})}
+
+// 确保时间戳被当作 UTC 解析 (SQLite CURRENT_TIMESTAMP 无时区后缀)
+function parseUTC(ts){
+  if(!ts)return new Date();
+  if(ts.endsWith('Z')||/[+-]\d{2}:\d{2}$/.test(ts))return new Date(ts);
+  return new Date(ts.replace(' ','T')+'Z');
+}
+function formatTime(ts){return parseUTC(ts).toLocaleString('zh-CN',{timeZone:chatTimezone,year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'})}
 
 // ===== 置顶通知 =====
 async function loadNotice(){
@@ -876,7 +886,7 @@ function applyAppearance(d){
   if(d.bg_type==='image'&&d.bg_image){
     applyBgToElement(msgEl,'image',d.bg_color,API_BASE+'/backgrounds/'+encodeURIComponent(d.bg_image),d.bg_mode);
   }else{applyBgToElement(msgEl,'color',d.bg_color||'#f5f5f5','','')}
-  if(d.timezone){chatTimezone=d.timezone;const sel=document.getElementById('timezoneSelect');if(sel)sel.value=chatTimezone}
+  if(d.timezone){chatTimezone=d.timezone;const sel=document.getElementById('timezoneSelect');if(sel)sel.value=chatTimezone;updateTzIndicator()}
 }
 
 function applyBgToElement(el,type,color,url,mode){
@@ -924,7 +934,7 @@ function initChat(){
     onlineUsernames=new Set(users.map(u=>u.username));updateOnlineDots();
   });
   socket.on('kicked',(d)=>showKickedOverlay(d.message||'您的账号已在其他设备登录'));
-  socket.on('timezoneChanged',(d)=>{if(d.timezone){chatTimezone=d.timezone;const s=document.getElementById('timezoneSelect');if(s)s.value=chatTimezone;refreshMessageTimes()}});
+  socket.on('timezoneChanged',(d)=>{if(d.timezone){chatTimezone=d.timezone;const s=document.getElementById('timezoneSelect');if(s)s.value=chatTimezone;updateTzIndicator();refreshMessageTimes()}});
   socket.on('appearanceChanged',(d)=>{appearanceData=d;applyAppearance(d)});
   socket.on('noticeChanged',(d)=>{applyNotice(d)});
   loadMessages();
@@ -967,7 +977,7 @@ function appendMessage(message,prepend){
   const div=document.createElement('div');div.className='message '+(isMy?'my':'other');div.dataset.messageId=message.id;
   messageCache.set(message.id,message);
   div.addEventListener('contextmenu',(e)=>{e.preventDefault();showMessageMenu(e,message)});
-  const time=new Date(message.created_at).toLocaleString('zh-CN',{timeZone:chatTimezone,year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const time=formatTime(message.created_at);
   const displayName=escapeHtml(message.nickname||message.username);
   const avatarUrl=getAvatarUrl(message.avatar);
   const isOnline=onlineUsernames.has(message.username);
@@ -1034,15 +1044,17 @@ async function handleAvatarUpload(input){
 }
 
 // ===== 时区 =====
-async function loadTimezone(){try{const r=await fetch(API_BASE+'/api/settings/timezone',{headers:authHeaders()});if(r.ok){const d=await r.json();if(d.timezone){chatTimezone=d.timezone;const s=document.getElementById('timezoneSelect');if(s)s.value=chatTimezone}}}catch(e){}}
+const TZ_LABELS={'Asia/Shanghai':'北京时间','Asia/Tokyo':'东京时间','Asia/Singapore':'新加坡时间','Asia/Kolkata':'印度时间','Asia/Dubai':'海湾时间','Europe/London':'伦敦时间','Europe/Paris':'中欧时间','Europe/Moscow':'莫斯科时间','America/New_York':'美东时间','America/Chicago':'美中时间','America/Denver':'山地时间','America/Los_Angeles':'美西时间','Pacific/Auckland':'新西兰时间','Australia/Sydney':'悉尼时间'};
+function updateTzIndicator(){const el=document.getElementById('tzIndicator');if(el)el.textContent='🕐 '+(TZ_LABELS[chatTimezone]||chatTimezone)}
+async function loadTimezone(){try{const r=await fetch(API_BASE+'/api/settings/timezone',{headers:authHeaders()});if(r.ok){const d=await r.json();if(d.timezone){chatTimezone=d.timezone;const s=document.getElementById('timezoneSelect');if(s)s.value=chatTimezone;updateTzIndicator()}if(d.serverTimezone){const m=document.getElementById('timezoneMsg');if(m)m.textContent='服务器系统时区: '+d.serverTimezone}}}catch(e){}}
 async function saveTimezone(){
   const tz=document.getElementById('timezoneSelect').value,m=document.getElementById('timezoneMsg');
-  try{const r=await fetch(API_BASE+'/api/settings/timezone',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({timezone:tz})});const d=await r.json();if(d.success){chatTimezone=tz;refreshMessageTimes();m.textContent='时区已更新';setTimeout(()=>{m.textContent=''},3000)}else m.textContent=d.message||'保存失败'}catch(e){m.textContent='保存失败'}
+  try{const r=await fetch(API_BASE+'/api/settings/timezone',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({timezone:tz})});const d=await r.json();if(d.success){chatTimezone=tz;refreshMessageTimes();updateTzIndicator();m.textContent='时区已更新';setTimeout(()=>{m.textContent=''},3000)}else m.textContent=d.message||'保存失败'}catch(e){m.textContent='保存失败'}
 }
 function refreshMessageTimes(){
   document.getElementById('messages').querySelectorAll('.message[data-message-id]').forEach(div=>{
     const msg=messageCache.get(parseInt(div.dataset.messageId));if(!msg)return;const t=div.querySelector('.time');if(!t)return;
-    t.textContent=new Date(msg.created_at).toLocaleString('zh-CN',{timeZone:chatTimezone,year:'numeric',month:'long',day:'numeric',hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    t.textContent=formatTime(msg.created_at);
   });
 }
 
@@ -1215,6 +1227,15 @@ try { db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0"); } catc
 try { db.exec("ALTER TABLE messages ADD COLUMN reply_to INTEGER"); } catch(e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT"); } catch(e) {}
 
+// 迁移: 将已有消息的 created_at 统一为 UTC ISO 格式 (带 Z 后缀)
+try {
+  const needFix = db.prepare("SELECT COUNT(*) as cnt FROM messages WHERE created_at NOT LIKE '%Z' AND created_at NOT LIKE '%+%' AND created_at NOT LIKE '%-__:__'").get();
+  if (needFix && needFix.cnt > 0) {
+    db.exec("UPDATE messages SET created_at = REPLACE(created_at, ' ', 'T') || 'Z' WHERE created_at NOT LIKE '%Z' AND created_at NOT LIKE '%+%' AND created_at NOT LIKE '%-__:__'");
+    console.log("✅ 已将 " + needFix.cnt + " 条消息时间戳迁移为 UTC 格式");
+  }
+} catch(e) { console.log("时间戳迁移跳过:", e.message); }
+
 db.exec(`
   CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
   CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL, nickname TEXT, avatar TEXT, is_admin INTEGER DEFAULT 0, last_login_at TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
@@ -1263,6 +1284,14 @@ function adminMiddleware(req,res,next){if(!req.user.isAdmin)return res.status(40
 
 function getSetting(k){const r=db.prepare("SELECT value FROM settings WHERE key=?").get(k);return r?r.value:(defaultSettings[k]||"")}
 function setSetting(k,v){db.prepare("INSERT OR REPLACE INTO settings (key,value,updated_at) VALUES (?,?,datetime('now'))").run(k,v)}
+
+// 将 SQLite 的 CURRENT_TIMESTAMP 格式 (无时区) 统一为 UTC ISO 格式
+function normalizeToUTC(ts){
+  if(!ts)return ts;
+  if(ts.endsWith("Z")||/[+-]\d{2}:\d{2}$/.test(ts))return ts;
+  // SQLite CURRENT_TIMESTAMP 格式: "2025-03-16 12:30:00" (本身就是 UTC)
+  return ts.replace(" ","T")+"Z";
+}
 
 // ===== Push Notification 相关 =====
 app.get("/api/push/vapid-key",(req,res)=>{
@@ -1359,7 +1388,7 @@ app.get("/api/messages",authMiddleware,(req,res)=>{
   let sql="SELECT m.*,u.nickname,u.avatar FROM messages m JOIN users u ON m.user_id=u.id";const params=[];
   if(before){const pb=parseInt(before);if(!isNaN(pb)&&pb>0){sql+=" WHERE m.id < ?";params.push(pb)}}
   sql+=" ORDER BY m.id DESC LIMIT ?";params.push(pl);
-  res.json(db.prepare(sql).all(...params).reverse());
+  res.json(db.prepare(sql).all(...params).reverse().map(m=>{m.created_at=normalizeToUTC(m.created_at);return m}));
 });
 
 app.post("/api/upload",authMiddleware,upload.single("file"),(req,res)=>{
@@ -1367,8 +1396,9 @@ app.post("/api/upload",authMiddleware,upload.single("file"),(req,res)=>{
   const type=req.file.mimetype.startsWith("image/")?"image":"file";
   const user=db.prepare("SELECT username,nickname,avatar FROM users WHERE id=?").get(req.user.userId);
   if(!user)return res.json({success:false,message:"用户不存在"});
-  const result=db.prepare("INSERT INTO messages (user_id,username,content,type,file_name,file_path,file_size) VALUES (?,?,?,?,?,?,?)").run(req.user.userId,user.username,req.body.content||"",type,req.file.originalname,req.file.filename,req.file.size);
-  const message={id:result.lastInsertRowid,username:user.username,nickname:user.nickname,avatar:user.avatar,content:req.body.content||"",type,file_name:req.file.originalname,file_path:req.file.filename,file_size:req.file.size,created_at:new Date().toISOString()};
+  const nowUtc=new Date().toISOString();
+  const result=db.prepare("INSERT INTO messages (user_id,username,content,type,file_name,file_path,file_size,created_at) VALUES (?,?,?,?,?,?,?,?)").run(req.user.userId,user.username,req.body.content||"",type,req.file.originalname,req.file.filename,req.file.size,nowUtc);
+  const message={id:result.lastInsertRowid,username:user.username,nickname:user.nickname,avatar:user.avatar,content:req.body.content||"",type,file_name:req.file.originalname,file_path:req.file.filename,file_size:req.file.size,created_at:nowUtc};
   io.emit("newMessage",message);
   const pushText=type==="image"?"[图片] "+req.file.originalname:"[文件] "+req.file.originalname;
   sendPushToOthers(req.user.userId,user.nickname||user.username,pushText);
@@ -1387,7 +1417,7 @@ app.post("/api/change-password",authMiddleware,async(req,res)=>{
 
 // ===== Settings =====
 const VALID_TZ=["Asia/Shanghai","Asia/Tokyo","Asia/Singapore","Asia/Kolkata","Asia/Dubai","Europe/London","Europe/Paris","Europe/Moscow","America/New_York","America/Chicago","America/Denver","America/Los_Angeles","Pacific/Auckland","Australia/Sydney"];
-app.get("/api/settings/timezone",authMiddleware,(req,res)=>{res.json({timezone:getSetting("timezone")})});
+app.get("/api/settings/timezone",authMiddleware,(req,res)=>{res.json({timezone:getSetting("timezone"),serverTimezone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
 app.post("/api/settings/timezone",authMiddleware,adminMiddleware,(req,res)=>{const{timezone}=req.body;if(!timezone||!VALID_TZ.includes(timezone))return res.json({success:false,message:"不支持的时区"});setSetting("timezone",timezone);io.emit("timezoneChanged",{timezone});res.json({success:true})});
 
 app.get("/api/settings/appearance",(req,res)=>{
@@ -1433,7 +1463,7 @@ app.delete("/api/users/:username",authMiddleware,adminMiddleware,(req,res)=>{
   db.prepare("DELETE FROM users WHERE username=?").run(req.params.username);res.json({success:true});
 });
 
-app.get("/api/backup",authMiddleware,adminMiddleware,(req,res)=>{const{startDate,endDate}=req.query;let sql="SELECT m.*,u.username as user_username,u.nickname,u.avatar FROM messages m JOIN users u ON m.user_id=u.id";const p=[];if(startDate&&endDate){sql+=" WHERE DATE(m.created_at) BETWEEN ? AND ?";p.push(startDate,endDate)}sql+=" ORDER BY m.id";res.json({messages:db.prepare(sql).all(...p)})});
+app.get("/api/backup",authMiddleware,adminMiddleware,(req,res)=>{const{startDate,endDate}=req.query;let sql="SELECT m.*,u.username as user_username,u.nickname,u.avatar FROM messages m JOIN users u ON m.user_id=u.id";const p=[];if(startDate&&endDate){sql+=" WHERE DATE(m.created_at) BETWEEN ? AND ?";p.push(startDate,endDate)}sql+=" ORDER BY m.id";res.json({messages:db.prepare(sql).all(...p).map(m=>{m.created_at=normalizeToUTC(m.created_at);return m})})});
 app.post("/api/restore",authMiddleware,adminMiddleware,(req,res)=>{const{messages}=req.body;if(!Array.isArray(messages))return res.json({success:false,message:"格式错误"});let count=0;const ins=db.prepare("INSERT INTO messages (user_id,username,content,type,file_name,file_path,file_size,created_at) VALUES (?,?,?,?,?,?,?,?)");try{db.transaction(ms=>{for(const m of ms){const u=db.prepare("SELECT id FROM users WHERE username=?").get(m.username);if(u){ins.run(u.id,m.username,m.content,m.type,m.file_name,m.file_path,m.file_size,m.created_at);count++}}})(messages);res.json({success:true,count})}catch(e){res.json({success:false,message:"恢复失败"})}});
 app.delete("/api/messages",authMiddleware,adminMiddleware,(req,res)=>{const{startDate,endDate}=req.body;if(!startDate||!endDate)return res.json({success:false,message:"请提供日期"});res.json({success:true,deleted:db.prepare("DELETE FROM messages WHERE DATE(created_at) BETWEEN ? AND ?").run(startDate,endDate).changes})});
 
@@ -1458,9 +1488,10 @@ io.on("connection",(socket)=>{
     if(!content||typeof content!=="string"||content.trim().length===0)return;
     const trimmed=content.trim().substring(0,5000);
     const safeReplyTo=(Number.isInteger(replyTo)&&replyTo>0)?replyTo:null;
-    const result=db.prepare("INSERT INTO messages (user_id,username,content,reply_to) VALUES (?,?,?,?)").run(socket.user.userId,socket.user.username,trimmed,safeReplyTo);
+    const nowUtc=new Date().toISOString();
+    const result=db.prepare("INSERT INTO messages (user_id,username,content,reply_to,created_at) VALUES (?,?,?,?,?)").run(socket.user.userId,socket.user.username,trimmed,safeReplyTo,nowUtc);
     const user=db.prepare("SELECT nickname,avatar FROM users WHERE id=?").get(socket.user.userId);
-    const message={id:result.lastInsertRowid,username:socket.user.username,nickname:user?user.nickname:socket.user.username,avatar:user?user.avatar:null,content:trimmed,type:"text",reply_to:safeReplyTo,created_at:new Date().toISOString()};
+    const message={id:result.lastInsertRowid,username:socket.user.username,nickname:user?user.nickname:socket.user.username,avatar:user?user.avatar:null,content:trimmed,type:"text",reply_to:safeReplyTo,created_at:nowUtc};
     io.emit("newMessage",message);
     sendPushToOthers(socket.user.userId, user?user.nickname:socket.user.username, trimmed);
   });
