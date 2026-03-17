@@ -1,7 +1,7 @@
 #!/bin/bash
 #===============================================================================
-# TeamChat 一键部署脚本 (全功能增强版 v7.2)
-# 新增: Web Push 推送通知（似乎还是不能用） + 置顶通知功能 + 缩放修正 + UTC时间修正
+# TeamChat 一键部署脚本 (全功能增强版 v7.3)
+# 新增: iOS/Android 推送通知修复 + 真正的 PWA 图标 + SW 完整化
 #===============================================================================
 
 set -e
@@ -20,7 +20,7 @@ APP_DIR="/var/www/teamchat"
 
 print_header() {
     echo -e "\n${CYAN}================================================${NC}"
-    echo -e "${CYAN}  TeamChat 一键部署脚本 v7.2${NC}"
+    echo -e "${CYAN}  TeamChat 一键部署脚本 v7.3${NC}"
     echo -e "${CYAN}================================================${NC}\n"
 }
 
@@ -165,7 +165,9 @@ SVGEOF
   "name": "TeamChat",
   "short_name": "TeamChat",
   "description": "团队聊天室",
+  "id": "/",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#667eea",
   "theme_color": "#667eea",
@@ -173,12 +175,26 @@ SVGEOF
     {
       "src": "/images/icon-192.png",
       "sizes": "192x192",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/images/icon-512.png",
       "sizes": "512x512",
-      "type": "image/png"
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/images/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
@@ -190,43 +206,211 @@ MANIFESTEOF
 ICONEOF
     cp "$APP_DIR/public/images/icon-192.svg" "$APP_DIR/public/images/icon-512.svg"
 
-    # 如果有 node+sharp 可以转 PNG，否则用 SVG 兼容
-    if command -v node >/dev/null 2>&1; then
-        cd "$APP_DIR" && node -e '
+    # 生成正确尺寸的 PWA 图标 (使用 Node.js 生成真正的 PNG 文件)
+    cd "$APP_DIR" && node -e '
 const fs = require("fs");
-// 简单写一个 1x1 PNG 占位，浏览器会用 SVG fallback
-const placeholder = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPj/HwADBwIAMCbHYQAAAABJRU5ErkJggg==","base64");
-if (!fs.existsSync("public/images/icon-192.png")) fs.writeFileSync("public/images/icon-192.png", placeholder);
-if (!fs.existsSync("public/images/icon-512.png")) fs.writeFileSync("public/images/icon-512.png", placeholder);
-' 2>/dev/null || true
-    fi
+const zlib = require("zlib");
+
+function createPNG(width, height, bgR, bgG, bgB, hasCircle) {
+  // 创建 RGBA raw pixel data
+  const pixels = Buffer.alloc(width * height * 4);
+  const cx = width / 2, cy = height / 2;
+  const outerR = Math.min(width, height) * 0.42;
+  const iconR = Math.min(width, height) * 0.22;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      const dx = x - cx, dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+
+      if (hasCircle && dist <= outerR) {
+        // 白circle area for chat icon
+        if (dist <= iconR) {
+          pixels[idx] = 255; pixels[idx+1] = 255; pixels[idx+2] = 255; pixels[idx+3] = 255;
+        } else {
+          pixels[idx] = bgR; pixels[idx+1] = bgG; pixels[idx+2] = bgB; pixels[idx+3] = 255;
+        }
+      } else {
+        pixels[idx] = bgR; pixels[idx+1] = bgG; pixels[idx+2] = bgB; pixels[idx+3] = 255;
+      }
+    }
+  }
+
+  // Draw a simple chat bubble shape in white
+  const bubbleW = width * 0.5, bubbleH = height * 0.35;
+  const bx1 = cx - bubbleW/2, by1 = cy - bubbleH/2 - height*0.05;
+  const bx2 = cx + bubbleW/2, by2 = cy + bubbleH/2 - height*0.05;
+  const cornerR = Math.min(bubbleW, bubbleH) * 0.25;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      let inside = false;
+      // Rounded rectangle check
+      if (x >= bx1 && x <= bx2 && y >= by1 && y <= by2) {
+        const lx = Math.max(bx1 + cornerR - x, 0, x - (bx2 - cornerR));
+        const ly = Math.max(by1 + cornerR - y, 0, y - (by2 - cornerR));
+        inside = (lx * lx + ly * ly) <= cornerR * cornerR;
+        if (x >= bx1 + cornerR && x <= bx2 - cornerR) inside = true;
+        if (y >= by1 + cornerR && y <= by2 - cornerR) inside = true;
+      }
+      // Triangle tail
+      const tailCx = cx + bubbleW * 0.1;
+      const tailTy = by2;
+      const tailBy = by2 + height * 0.1;
+      const tailW = bubbleW * 0.15;
+      if (y >= tailTy && y <= tailBy) {
+        const frac = (y - tailTy) / (tailBy - tailTy);
+        const tw = tailW * (1 - frac);
+        if (x >= tailCx - tw/2 && x <= tailCx + tw/2) inside = true;
+      }
+      if (inside) {
+        pixels[idx] = 255; pixels[idx+1] = 255; pixels[idx+2] = 255; pixels[idx+3] = 255;
+      }
+    }
+  }
+
+  // Encode as PNG
+  // Filter: 0 (None) for each row
+  const rawData = Buffer.alloc(height * (1 + width * 4));
+  for (let y = 0; y < height; y++) {
+    rawData[y * (1 + width * 4)] = 0; // filter byte
+    pixels.copy(rawData, y * (1 + width * 4) + 1, y * width * 4, (y + 1) * width * 4);
+  }
+
+  const compressed = zlib.deflateSync(rawData, { level: 9 });
+
+  function crc32(buf) {
+    let crc = 0xFFFFFFFF;
+    for (let i = 0; i < buf.length; i++) {
+      crc ^= buf[i];
+      for (let j = 0; j < 8; j++) crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
+    }
+    return (crc ^ 0xFFFFFFFF) >>> 0;
+  }
+
+  function chunk(type, data) {
+    const len = Buffer.alloc(4); len.writeUInt32BE(data.length);
+    const typeData = Buffer.concat([Buffer.from(type), data]);
+    const crc = Buffer.alloc(4); crc.writeUInt32BE(crc32(typeData));
+    return Buffer.concat([len, typeData, crc]);
+  }
+
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // RGBA
+  ihdr[10] = 0; ihdr[11] = 0; ihdr[12] = 0;
+
+  return Buffer.concat([sig, chunk("IHDR", ihdr), chunk("IDAT", compressed), chunk("IEND", Buffer.alloc(0))]);
+}
+
+// 主色: #667eea -> RGB(102, 126, 234)
+const sizes = [192, 512];
+for (const s of sizes) {
+  const png = createPNG(s, s, 102, 126, 234, false);
+  fs.writeFileSync("public/images/icon-" + s + ".png", png);
+  fs.writeFileSync("public/images/icon-maskable-" + s + ".png", png);
+  console.log("✅ 已生成 " + s + "x" + s + " PNG 图标");
+}
+// 生成一个小尺寸通知图标
+const notifIcon = createPNG(96, 96, 102, 126, 234, false);
+fs.writeFileSync("public/images/icon-96.png", notifIcon);
+console.log("✅ 已生成 96x96 通知图标");
+' 2>/dev/null || echo -e "${YELLOW}PNG 图标生成失败，将使用 SVG 回退${NC}"
 
     # ===== Service Worker =====
     cat > "$APP_DIR/public/sw.js" <<'SWEOF'
-// TeamChat Service Worker - 推送通知
+// TeamChat Service Worker - PWA + 推送通知 (iOS/Android 双平台兼容)
+
+// 缓存版本号 - 更新文件时递增
+var CACHE_NAME = "teamchat-v2";
+var OFFLINE_URLS = ["/", "/index.html", "/style.css", "/app.js", "/images/icon-192.png", "/images/icon-96.png", "/images/default-avatar.svg"];
+
+// ===== 安装: 预缓存关键资源 (iOS 需要缓存才能正确识别 PWA) =====
+self.addEventListener("install", function(event) {
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(function(cache) {
+      return cache.addAll(OFFLINE_URLS);
+    }).then(function() {
+      return self.skipWaiting();
+    })
+  );
+});
+
+// ===== 激活: 清理旧缓存 =====
+self.addEventListener("activate", function(event) {
+  event.waitUntil(
+    caches.keys().then(function(names) {
+      return Promise.all(
+        names.filter(function(n) { return n !== CACHE_NAME; })
+             .map(function(n) { return caches.delete(n); })
+      );
+    }).then(function() {
+      return self.clients.claim();
+    })
+  );
+});
+
+// ===== Fetch: Network-first 策略 (iOS 必须有 fetch handler 才能正常注册 PWA) =====
+self.addEventListener("fetch", function(event) {
+  var req = event.request;
+  // 只处理 GET 请求的同源资源
+  if (req.method !== "GET") return;
+  // 跳过 API 和 Socket.IO 请求
+  if (req.url.indexOf("/api/") !== -1 || req.url.indexOf("/socket.io/") !== -1) return;
+  // 跳过 chrome-extension 等非 http(s) 请求
+  if (!req.url.startsWith("http")) return;
+
+  event.respondWith(
+    fetch(req).then(function(response) {
+      // 成功获取网络响应，更新缓存
+      if (response && response.status === 200 && response.type === "basic") {
+        var clone = response.clone();
+        caches.open(CACHE_NAME).then(function(cache) {
+          cache.put(req, clone);
+        });
+      }
+      return response;
+    }).catch(function() {
+      // 网络失败，从缓存返回
+      return caches.match(req).then(function(cached) {
+        if (cached) return cached;
+        // 对导航请求返回离线首页
+        if (req.mode === "navigate") return caches.match("/index.html");
+        return new Response("Offline", { status: 503, statusText: "Offline" });
+      });
+    })
+  );
+});
+
+// ===== Push: 接收推送消息并显示通知 =====
 self.addEventListener("push", function(event) {
-  let data = { title: "TeamChat", body: "您有新消息", icon: "/images/icon-192.svg" };
+  var data = { title: "TeamChat", body: "您有新消息", icon: "/images/icon-192.png", badge: "/images/icon-96.png" };
   try {
     if (event.data) {
-      const payload = event.data.json();
+      var payload = event.data.json();
       data.title = payload.title || data.title;
       data.body = payload.body || data.body;
-      data.icon = payload.icon || data.icon;
+      if (payload.icon) data.icon = payload.icon;
       data.data = payload.data || {};
     }
   } catch(e) {
     if (event.data) data.body = event.data.text();
   }
 
-  const options = {
+  var options = {
     body: data.body,
     icon: data.icon,
-    badge: "/images/icon-192.svg",
+    badge: data.badge,
     vibrate: [200, 100, 200],
     data: data.data || {},
-    actions: [{ action: "open", title: "查看" }],
-    tag: "teamchat-msg",
-    renotify: true
+    tag: "teamchat-" + Date.now(),
+    renotify: true,
+    requireInteraction: false
   };
 
   event.waitUntil(
@@ -234,28 +418,37 @@ self.addEventListener("push", function(event) {
   );
 });
 
+// ===== 通知点击 =====
 self.addEventListener("notificationclick", function(event) {
   event.notification.close();
+  var urlToOpen = (event.notification.data && event.notification.data.url) ? event.notification.data.url : "/";
+
   event.waitUntil(
-    clients.matchAll({ type: "window", includeUncontrolled: true }).then(function(clientList) {
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(function(clientList) {
+      // 如果已有窗口打开，聚焦它
       for (var i = 0; i < clientList.length; i++) {
         var client = clientList[i];
         if (client.url.indexOf(self.location.origin) !== -1 && "focus" in client) {
           return client.focus();
         }
       }
-      if (clients.openWindow) return clients.openWindow("/");
+      // 否则打开新窗口
+      if (self.clients.openWindow) return self.clients.openWindow(urlToOpen);
     })
   );
 });
 
-// 基础缓存（让 PWA 可安装）
-var CACHE_NAME = "teamchat-v1";
-self.addEventListener("install", function(event) {
-  self.skipWaiting();
-});
-self.addEventListener("activate", function(event) {
-  event.waitUntil(clients.claim());
+// ===== 订阅变更: 当推送订阅过期或被浏览器更新时自动重新订阅 (iOS 重要) =====
+self.addEventListener("pushsubscriptionchange", function(event) {
+  event.waitUntil(
+    self.registration.pushManager.subscribe(event.oldSubscription.options).then(function(newSub) {
+      return fetch("/api/push/renew", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subscription: newSub.toJSON(), oldEndpoint: event.oldSubscription ? event.oldSubscription.endpoint : null })
+      });
+    })
+  );
 });
 SWEOF
 
@@ -271,9 +464,11 @@ SWEOF
   <meta name="apple-mobile-web-app-title" content="TeamChat">
   <meta name="theme-color" content="#667eea">
   <link rel="manifest" href="/manifest.json">
-  <link rel="apple-touch-icon" href="/images/icon-192.svg">
+  <link rel="apple-touch-icon" href="/images/icon-192.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
+  <link rel="icon" type="image/png" sizes="96x96" href="/images/icon-96.png">
   <title>团队聊天室</title>
-  <link rel="stylesheet" href="style.css?v=20260317a">
+  <link rel="stylesheet" href="style.css?v=20260317b">
 </head>
 <body>
   <div id="loginPage" class="page">
@@ -331,7 +526,7 @@ SWEOF
           <p id="pushStatus" style="font-size:13px;color:#666;margin-bottom:10px">检测中...</p>
           <button id="pushToggleBtn" onclick="togglePushNotification()" style="display:none">开启推送通知</button>
           <p id="pushIosHint" class="hidden" style="font-size:12px;color:#e67e22;margin-top:8px">
-            📱 iOS 用户：请先点击 Safari 底部的"分享"按钮 → "添加到主屏幕"，然后从主屏幕打开才能收到推送通知。
+            📱 iOS 用户：请先点击 Safari 底部的"分享"按钮 → "添加到主屏幕"，然后从主屏幕图标打开本应用，再来此处开启推送通知。需要 iOS 16.4 或更高版本。
           </p>
         </div>
       </div>
@@ -517,7 +712,7 @@ SWEOF
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="app.js?v=20260317a"></script>
+  <script src="app.js?v=20260317b"></script>
 </body>
 </html>
 HTMLEOF
@@ -718,8 +913,27 @@ let swRegistration=null;
 async function initServiceWorker(){
   if(!('serviceWorker' in navigator)){console.log('SW not supported');return}
   try{
-    swRegistration=await navigator.serviceWorker.register('/sw.js');
-    console.log('Service Worker registered');
+    swRegistration=await navigator.serviceWorker.register('/sw.js',{updateViaCache:'none'});
+    // 强制检查 SW 更新
+    swRegistration.update().catch(function(){});
+    // 等待 SW 激活 (iOS 首次安装后需要)
+    if(swRegistration.installing){
+      await new Promise(function(resolve){
+        swRegistration.installing.addEventListener('statechange',function(e){
+          if(e.target.state==='activated')resolve();
+        });
+        setTimeout(resolve,5000);// 超时保护
+      });
+    }else if(swRegistration.waiting){
+      // 如果有等待中的 SW，通知它立即接管
+      swRegistration.waiting.postMessage({type:'SKIP_WAITING'});
+    }
+    // 确保我们有一个 active SW
+    if(!swRegistration.active){
+      await navigator.serviceWorker.ready;
+      swRegistration=await navigator.serviceWorker.getRegistration();
+    }
+    console.log('Service Worker registered and active');
   }catch(e){console.error('SW registration failed:',e)}
 }
 
@@ -727,21 +941,43 @@ function detectPushSupport(){
   const statusEl=document.getElementById('pushStatus');
   const btnEl=document.getElementById('pushToggleBtn');
   const iosHint=document.getElementById('pushIosHint');
-  const isIos=/iPad|iPhone|iPod/.test(navigator.userAgent);
-  const isStandalone=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+  const isIos=/iPad|iPhone|iPod/.test(navigator.userAgent)&&!window.MSStream;
+  const isStandalone=window.matchMedia('(display-mode: standalone)').matches||navigator.standalone===true;
 
-  if(!('serviceWorker' in navigator)||!('PushManager' in window)){
-    statusEl.textContent='您的浏览器不支持推送通知';
-    if(isIos&&!isStandalone)iosHint.classList.remove('hidden');
+  // 检查基本能力
+  if(!('serviceWorker' in navigator)){
+    statusEl.textContent='您的浏览器不支持 Service Worker';
+    if(isIos)iosHint.classList.remove('hidden');
     return;
   }
+
+  if(!('PushManager' in window)){
+    if(isIos&&!isStandalone){
+      statusEl.textContent='请先将此页面"添加到主屏幕"，再从主屏图标打开';
+      iosHint.classList.remove('hidden');
+    }else if(isIos&&isStandalone){
+      statusEl.textContent='当前 iOS 版本不支持推送，需要 iOS 16.4 或更高';
+      iosHint.classList.remove('hidden');
+    }else{
+      statusEl.textContent='您的浏览器不支持推送通知';
+    }
+    return;
+  }
+
+  // iOS 在 Safari 浏览器中（非 standalone）不支持 push
   if(isIos&&!isStandalone){
     statusEl.textContent='iOS 需要添加到主屏幕后才能推送';
     iosHint.classList.remove('hidden');
-    btnEl.style.display='block';
-    btnEl.textContent='尝试开启推送';
+    // 不显示按钮，避免误操作
     return;
   }
+
+  // 检查通知权限状态
+  if('Notification' in window&&Notification.permission==='denied'){
+    statusEl.textContent='通知权限已被拒绝，请在系统设置中允许本站通知';
+    return;
+  }
+
   checkCurrentSubscription();
 }
 
@@ -749,11 +985,22 @@ async function checkCurrentSubscription(){
   const statusEl=document.getElementById('pushStatus');
   const btnEl=document.getElementById('pushToggleBtn');
   if(!swRegistration){await initServiceWorker()}
-  if(!swRegistration)return;
+  if(!swRegistration){statusEl.textContent='Service Worker 未就绪';return}
   try{
+    // 确保 SW 已激活
+    const reg=await navigator.serviceWorker.ready;
+    if(reg)swRegistration=reg;
     const sub=await swRegistration.pushManager.getSubscription();
     if(sub){
       pushSubscription=sub;
+      // 每次检查时同步订阅到服务器 (确保重启后服务器仍有记录)
+      if(currentUser&&currentUser.token){
+        fetch(API_BASE+'/api/push/subscribe',{
+          method:'POST',
+          headers:authHeaders({'Content-Type':'application/json'}),
+          body:JSON.stringify({subscription:sub.toJSON()})
+        }).catch(function(){});
+      }
       statusEl.textContent='✅ 推送通知已开启';
       btnEl.style.display='block';
       btnEl.textContent='关闭推送通知';
@@ -777,50 +1024,66 @@ async function checkCurrentSubscription(){
       btnEl.style.width='100%';
       btnEl.style.cursor='pointer';
     }
-  }catch(e){statusEl.textContent='检测推送状态失败'}
+  }catch(e){
+    console.error('checkCurrentSubscription error:',e);
+    statusEl.textContent='检测推送状态失败: '+e.message;
+  }
 }
 
 async function togglePushNotification(){
+  const statusEl=document.getElementById('pushStatus');
   if(pushSubscription){
     try{
+      const endpoint=pushSubscription.endpoint;
       await pushSubscription.unsubscribe();
       await fetch(API_BASE+'/api/push/unsubscribe',{
         method:'POST',
         headers:authHeaders({'Content-Type':'application/json'}),
-        body:JSON.stringify({endpoint:pushSubscription.endpoint})
+        body:JSON.stringify({endpoint:endpoint})
       });
       pushSubscription=null;
       checkCurrentSubscription();
-    }catch(e){alert('取消推送失败')}
+    }catch(e){alert('取消推送失败: '+e.message)}
   }else{
     try{
+      statusEl.textContent='正在配置推送...';
       const keyRes=await fetch(API_BASE+'/api/push/vapid-key');
       const keyData=await keyRes.json();
-      if(!keyData.publicKey){alert('服务器推送未配置');return}
+      if(!keyData.publicKey){alert('服务器推送未配置');statusEl.textContent='服务器推送未配置';return}
 
+      // 请求通知权限
       const permission=await Notification.requestPermission();
       if(permission!=='granted'){
-        document.getElementById('pushStatus').textContent='您拒绝了通知权限，请在浏览器设置中允许';
+        statusEl.textContent='通知权限被拒绝，请在系统设置 → 通知中允许本站';
         return;
       }
 
+      // 确保 SW 完全激活
       if(!swRegistration)await initServiceWorker();
+      const reg=await navigator.serviceWorker.ready;
+      if(reg)swRegistration=reg;
+
       const sub=await swRegistration.pushManager.subscribe({
         userVisibleOnly:true,
         applicationServerKey:urlBase64ToUint8Array(keyData.publicKey)
       });
 
-      await fetch(API_BASE+'/api/push/subscribe',{
+      const res=await fetch(API_BASE+'/api/push/subscribe',{
         method:'POST',
         headers:authHeaders({'Content-Type':'application/json'}),
         body:JSON.stringify({subscription:sub.toJSON()})
       });
+      const result=await res.json();
+      if(!result.success){
+        statusEl.textContent='订阅保存失败: '+(result.message||'');
+        return;
+      }
 
       pushSubscription=sub;
       checkCurrentSubscription();
     }catch(e){
       console.error('Push subscribe error:',e);
-      document.getElementById('pushStatus').textContent='开启推送失败: '+e.message;
+      statusEl.textContent='开启推送失败: '+e.message;
     }
   }
 }
@@ -1157,7 +1420,7 @@ write_app_files() {
     cat > "$APP_DIR/package.json" <<'PKGEOF'
 {
   "name": "teamchat",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "main": "server.js",
   "dependencies": {
     "express": "^4.18.2",
@@ -1249,6 +1512,20 @@ for (const [k, v] of Object.entries(defaultSettings)) insSetting.run(k, v);
 
 app.use(cors());
 app.use(express.json({ limit: "5mb" }));
+
+// Service Worker 必须不被缓存，否则更新后 iOS 无法获取新版本
+app.get("/sw.js", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+  res.setHeader("Content-Type", "application/javascript");
+  res.sendFile(path.join(__dirname, "public", "sw.js"));
+});
+// manifest.json 也不应被长期缓存
+app.get("/manifest.json", (req, res) => {
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Content-Type", "application/manifest+json");
+  res.sendFile(path.join(__dirname, "public", "manifest.json"));
+});
+
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/uploads", express.static(UPLOAD_DIR));
 app.use("/avatars", express.static(AVATAR_DIR));
@@ -1299,9 +1576,13 @@ app.get("/api/push/vapid-key",(req,res)=>{
 });
 
 app.post("/api/push/subscribe",authMiddleware,(req,res)=>{
-  const {subscription}=req.body;
+  const {subscription,oldEndpoint}=req.body;
   if(!subscription||!subscription.endpoint||!subscription.keys)return res.json({success:false,message:"无效的订阅数据"});
   try{
+    // 如果提供了旧 endpoint，先删除它
+    if(oldEndpoint){
+      db.prepare("DELETE FROM push_subscriptions WHERE endpoint=?").run(oldEndpoint);
+    }
     db.prepare("INSERT OR REPLACE INTO push_subscriptions (user_id,endpoint,keys_p256dh,keys_auth) VALUES (?,?,?,?)")
       .run(req.user.userId,subscription.endpoint,subscription.keys.p256dh,subscription.keys.auth);
     res.json({success:true});
@@ -1315,6 +1596,20 @@ app.post("/api/push/unsubscribe",authMiddleware,(req,res)=>{
   res.json({success:true});
 });
 
+// SW pushsubscriptionchange 触发的续订 (无 auth token，通过旧 endpoint 识别用户)
+app.post("/api/push/renew",(req,res)=>{
+  const {subscription,oldEndpoint}=req.body;
+  if(!subscription||!subscription.endpoint||!subscription.keys||!oldEndpoint)return res.json({success:false,message:"参数不完整"});
+  try{
+    const old=db.prepare("SELECT user_id FROM push_subscriptions WHERE endpoint=?").get(oldEndpoint);
+    if(!old)return res.json({success:false,message:"原订阅不存在"});
+    db.prepare("DELETE FROM push_subscriptions WHERE endpoint=?").run(oldEndpoint);
+    db.prepare("INSERT OR REPLACE INTO push_subscriptions (user_id,endpoint,keys_p256dh,keys_auth) VALUES (?,?,?,?)")
+      .run(old.user_id,subscription.endpoint,subscription.keys.p256dh,subscription.keys.auth);
+    res.json({success:true});
+  }catch(e){res.json({success:false,message:"续订失败"})}
+});
+
 function sendPushToOthers(senderUserId, senderName, messageText){
   const subs=db.prepare("SELECT * FROM push_subscriptions WHERE user_id != ?").all(senderUserId);
   const chatTitle=getSetting("chat_title")||"TeamChat";
@@ -1322,12 +1617,16 @@ function sendPushToOthers(senderUserId, senderName, messageText){
   const payload=JSON.stringify({
     title:chatTitle,
     body:senderName+": "+body,
-    icon:"/images/icon-192.svg",
+    icon:"/images/icon-192.png",
     data:{url:"/"}
   });
+  // TTL=86400 (24小时): 推送服务会尝试在24小时内送达 (iOS 离线时尤其重要)
+  // urgency=high: 告诉推送服务这是高优先级消息，应立即送达
+  const pushOptions = { TTL: 86400, urgency: "high", topic: "teamchat-msg" };
   for(const sub of subs){
     const pushSub={endpoint:sub.endpoint,keys:{p256dh:sub.keys_p256dh,auth:sub.keys_auth}};
-    webpush.sendNotification(pushSub,payload).catch(err=>{
+    webpush.sendNotification(pushSub,payload,pushOptions).catch(err=>{
+      console.log("Push failed for sub "+sub.id+": "+(err.statusCode||err.message));
       if(err.statusCode===410||err.statusCode===404){
         db.prepare("DELETE FROM push_subscriptions WHERE id=?").run(sub.id);
       }
@@ -1513,7 +1812,20 @@ SERVEREOF
 
 install_npm_deps() {
     echo -e "\n${YELLOW}阶段 4/6: 正在安装 Node.js 依赖...${NC}"
-    cd "$APP_DIR"; npm install --production
+    cd "$APP_DIR"
+    # 检测已有 node_modules 是否与当前 Node.js 版本不匹配，若不匹配则清除重装
+    if [ -d "node_modules/better-sqlite3/build" ]; then
+        local need_rebuild=false
+        node -e 'require("better-sqlite3")' 2>/dev/null || need_rebuild=true
+        if [ "$need_rebuild" = true ]; then
+            echo -e "${YELLOW}检测到原生模块与当前 Node.js 版本不匹配，正在重新编译...${NC}"
+            rm -rf node_modules/better-sqlite3/build node_modules/better-sqlite3/prebuilds
+            npm rebuild better-sqlite3
+        fi
+    fi
+    npm install --production
+    # 确保原生模块已针对当前 Node.js 版本编译
+    npm rebuild 2>/dev/null || true
     echo -e "${GREEN}✅ Node.js 依赖安装完成${NC}"
 }
 
@@ -1721,9 +2033,11 @@ do_install() {
     echo -e "${GREEN}================================================${NC}"
     echo ""
     echo -e "${YELLOW}📱 推送通知说明:${NC}"
-    echo "  - Android Chrome: 打开网页后在设置中开启推送即可"
-    echo "  - iOS Safari (16.4+): 先"添加到主屏幕"再从主屏幕打开"
-    echo "  - 推送需要 HTTPS，使用 IP 直连时仅 localhost 可用"
+    echo "  - Android Chrome: 打开网页 → 设置 → 开启推送通知即可"
+    echo "  - iOS Safari (16.4+): 先点'分享'→'添加到主屏幕'→从主屏图标打开→设置→开启推送"
+    echo "  - iOS 需要 16.4 或更高版本才支持 PWA 推送"
+    echo "  - 推送需要 HTTPS（已配置 SSL）或 localhost"
+    echo "  - 升级提示: 如从旧版升级，请在设置中先关闭再重新开启推送通知"
     echo ""
 }
 
