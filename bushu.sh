@@ -1,7 +1,7 @@
 #!/bin/bash
 #===============================================================================
-# TeamChat 一键部署脚本 (全功能增强版 v7.3)
-# 新增: iOS/Android 推送通知修复 + 真正的 PWA 图标 + SW 完整化
+# TeamChat 一键部署脚本 (全功能增强版 v7.4)
+# 新增: 富文本编辑器 (加粗/斜体/下划线/删除线/字体颜色/背景色) + 换行支持
 #===============================================================================
 
 set -e
@@ -20,7 +20,7 @@ APP_DIR="/var/www/teamchat"
 
 print_header() {
     echo -e "\n${CYAN}================================================${NC}"
-    echo -e "${CYAN}  TeamChat 一键部署脚本 v7.3${NC}"
+    echo -e "${CYAN}  TeamChat 一键部署脚本 v7.4${NC}"
     echo -e "${CYAN}================================================${NC}\n"
 }
 
@@ -468,7 +468,7 @@ SWEOF
   <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
   <link rel="icon" type="image/png" sizes="96x96" href="/images/icon-96.png">
   <title>团队聊天室</title>
-  <link rel="stylesheet" href="style.css?v=20260317b">
+  <link rel="stylesheet" href="style.css?v=20260326a">
 </head>
 <body>
   <div id="loginPage" class="page">
@@ -508,10 +508,27 @@ SWEOF
       </div>
     </div>
     <div id="messages" class="messages"><div class="load-more" onclick="loadMoreMessages()">加载更多</div></div>
+    <div class="rich-toolbar" id="richToolbar">
+      <button type="button" class="tb-btn" onclick="execFmt('bold')" title="加粗"><b>B</b></button>
+      <button type="button" class="tb-btn" onclick="execFmt('italic')" title="斜体"><i>I</i></button>
+      <button type="button" class="tb-btn" onclick="execFmt('underline')" title="下划线"><u>U</u></button>
+      <button type="button" class="tb-btn" onclick="execFmt('strikeThrough')" title="删除线"><s>S</s></button>
+      <span class="tb-sep"></span>
+      <label class="tb-color-wrap" title="文字颜色">
+        <button type="button" class="tb-color-btn" id="fgColorBtn" onclick="openColorPicker('fg')" style="color:#e53e3e">A</button>
+        <input type="color" id="fgColorPicker" value="#e53e3e" class="tb-color-input">
+      </label>
+      <label class="tb-color-wrap" title="背景色">
+        <button type="button" class="tb-color-btn tb-bg-style" id="bgColorBtn" onclick="openColorPicker('bg')" style="background:#fefcbf">A</button>
+        <input type="color" id="bgColorPicker" value="#fefcbf" class="tb-color-input">
+      </label>
+      <span class="tb-sep"></span>
+      <button type="button" class="tb-btn" onclick="execFmt('removeFormat')" title="清除格式">✕</button>
+    </div>
     <div class="input-area">
       <button onclick="document.getElementById('fileInput').click()" class="attach-btn">📎</button>
       <input type="file" id="fileInput" hidden onchange="handleFileUpload(this)">
-      <input type="text" id="messageInput" placeholder="输入消息..." onkeypress="handleKeyPress(event)">
+      <div id="messageInput" class="rich-input" contenteditable="true" data-placeholder="输入消息... (Shift+Enter 换行)" onkeydown="handleKeyDown(event)"></div>
       <button onclick="sendMessage()" class="send-btn" id="sendBtn">发送</button>
     </div>
   </div>
@@ -712,7 +729,7 @@ SWEOF
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="app.js?v=20260317b"></script>
+  <script src="app.js?v=20260326a"></script>
 </body>
 </html>
 HTMLEOF
@@ -757,8 +774,32 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .message img.chat-image{max-width:200px;max-height:200px;border-radius:8px;cursor:pointer;margin-top:8px}
 .message .file{display:flex;align-items:center;gap:8px;padding:8px 12px;background:rgba(0,0,0,.05);border-radius:8px;margin-top:8px;cursor:pointer}
 .message a{color:inherit;text-decoration:underline}
+.message .content{white-space:pre-wrap;word-break:break-word;line-height:1.5}
+.message .content b,.message .content strong{font-weight:700}
+.message .content i,.message .content em{font-style:italic}
+.message .content u{text-decoration:underline}
+.message .content s,.message .content strike{text-decoration:line-through}
 .input-area{background:#fff;padding:12px 16px;display:flex;gap:10px;align-items:center;box-shadow:0 -2px 8px rgba(0,0,0,.05);flex-shrink:0}
 .input-area input[type="text"]{flex:1;padding:12px 16px;border:1px solid #ddd;border-radius:24px;font-size:16px;outline:none}
+/* Rich text toolbar */
+.rich-toolbar{background:#fff;padding:4px 12px;display:flex;align-items:center;gap:2px;border-top:1px solid #eee;flex-shrink:0}
+.tb-btn{background:none;border:1px solid transparent;border-radius:4px;width:32px;height:30px;font-size:14px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#555;transition:all .15s}
+.tb-btn:hover{background:#f0f2ff;border-color:#d0d5f0}
+.tb-btn:active{background:#e0e4f8}
+.tb-sep{width:1px;height:20px;background:#ddd;margin:0 4px;flex-shrink:0}
+.tb-color-wrap{position:relative;display:inline-flex;align-items:center}
+.tb-color-btn{background:none;border:1px solid transparent;border-radius:4px;width:32px;height:30px;font-size:15px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.tb-color-btn:hover{border-color:#d0d5f0;background:#f0f2ff}
+.tb-bg-style{font-size:13px;color:#333;border-radius:4px}
+.tb-color-input{position:absolute;top:0;left:0;width:1px;height:1px;opacity:0;pointer-events:none;overflow:hidden}
+/* Rich input area */
+.rich-input{flex:1;min-height:24px;max-height:120px;padding:10px 16px;border:1px solid #ddd;border-radius:16px;font-size:16px;outline:none;overflow-y:auto;word-break:break-word;white-space:pre-wrap;line-height:1.5;font-family:inherit;-webkit-user-select:text;user-select:text}
+.rich-input:empty:before{content:attr(data-placeholder);color:#aaa;pointer-events:none}
+.rich-input:focus{border-color:#667eea;box-shadow:0 0 0 2px rgba(102,126,234,.15)}
+.rich-input b,.rich-input strong{font-weight:700}
+.rich-input i,.rich-input em{font-style:italic}
+.rich-input u{text-decoration:underline}
+.rich-input s,.rich-input strike{text-decoration:line-through}
 .attach-btn,.send-btn{height:44px;border-radius:22px;border:none;font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center}
 .attach-btn{width:44px;background:#f0f0f0;font-size:20px}.send-btn{min-width:44px;padding:0 18px;background:#667eea;color:#fff;font-weight:500;white-space:nowrap}
 .reply-box{background:#f0f2ff;padding:8px 16px;display:flex;align-items:center;gap:8px;font-size:13px;color:#555;border-left:3px solid #667eea}
@@ -833,6 +874,59 @@ let noticeExpanded=false;
 
 function escapeHtml(t){const d=document.createElement('div');d.appendChild(document.createTextNode(t));return d.innerHTML}
 function escapeAttr(t){return String(t).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/'/g,'&#39;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+function sanitizeIncoming(html){
+  if(!html)return '';
+  // If content has no HTML tags, treat as plain text (backward compat)
+  if(!/<[a-zA-Z]/.test(html)){
+    const s=escapeHtml(html);
+    return s.replace(/(https?:\/\/[^\s&lt;]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+  }
+  const tmp=document.createElement('div');tmp.innerHTML=html;
+  tmp.querySelectorAll('script,style,link,meta,iframe,object,embed').forEach(el=>el.remove());
+  const allowed={'B':1,'STRONG':1,'I':1,'EM':1,'U':1,'S':1,'STRIKE':1,'SPAN':1,'FONT':1,'BR':1,'A':1};
+  const allowedAttrs={'style':1,'color':1,'href':1,'target':1,'rel':1};
+  function walk(node){
+    [...node.childNodes].forEach(ch=>{
+      if(ch.nodeType===1){
+        if(!allowed[ch.tagName]){while(ch.firstChild)ch.parentNode.insertBefore(ch.firstChild,ch);ch.remove()}
+        else{
+          [...ch.attributes].forEach(a=>{if(!allowedAttrs[a.name])ch.removeAttribute(a.name)});
+          if(ch.style){
+            const s=ch.style;const safe={};
+            if(s.color)safe.color=s.color;if(s.backgroundColor)safe['background-color']=s.backgroundColor;
+            if(s.fontWeight)safe['font-weight']=s.fontWeight;if(s.fontStyle)safe['font-style']=s.fontStyle;
+            if(s.textDecoration||s.textDecorationLine)safe['text-decoration']=s.textDecoration||s.textDecorationLine;
+            ch.removeAttribute('style');
+            const ss=Object.entries(safe).map(([k,v])=>k+':'+v).join(';');
+            if(ss)ch.setAttribute('style',ss);
+          }
+          // For <a> tags, ensure safe attributes
+          if(ch.tagName==='A'){ch.setAttribute('target','_blank');ch.setAttribute('rel','noopener')}
+          walk(ch);
+        }
+      }
+    });
+  }
+  walk(tmp);
+  // Auto-link bare URLs in text nodes
+  const tw=document.createTreeWalker(tmp,NodeFilter.SHOW_TEXT,null,false);
+  const textNodes=[];while(tw.nextNode())textNodes.push(tw.currentNode);
+  textNodes.forEach(tn=>{
+    if(tn.parentNode&&tn.parentNode.tagName==='A')return;
+    const urlRe=/(https?:\/\/[^\s<]+)/g;
+    if(urlRe.test(tn.textContent)){
+      const frag=document.createDocumentFragment();
+      let lastIdx=0;tn.textContent.replace(urlRe,(m,_,offset)=>{
+        if(offset>lastIdx)frag.appendChild(document.createTextNode(tn.textContent.slice(lastIdx,offset)));
+        const a=document.createElement('a');a.href=m;a.target='_blank';a.rel='noopener';a.textContent=m;frag.appendChild(a);
+        lastIdx=offset+m.length;
+      });
+      if(lastIdx<tn.textContent.length)frag.appendChild(document.createTextNode(tn.textContent.slice(lastIdx)));
+      tn.parentNode.replaceChild(frag,tn);
+    }
+  });
+  return tmp.innerHTML;
+}
 function authHeaders(x){const h={'Authorization':'Bearer '+(currentUser?currentUser.token:'')};return Object.assign(h,x||{})}
 
 // 确保时间戳被当作 UTC 解析 (SQLite CURRENT_TIMESTAMP 无时区后缀)
@@ -1245,11 +1339,11 @@ function appendMessage(message,prepend){
   const avatarUrl=getAvatarUrl(message.avatar);
   const isOnline=onlineUsernames.has(message.username);
   let content='';
-  if(message.type==='text'){const s=escapeHtml(message.content);content=s.replace(/(https?:\/\/[^\s&lt;]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>')}
+  if(message.type==='text'){content=sanitizeIncoming(message.content)}
   else if(message.type==='image'){const src=API_BASE+'/uploads/'+encodeURIComponent(message.file_path);content='<img class="chat-image" src="'+escapeAttr(src)+'" onclick="showImagePreview(this.src)" alt="'+escapeAttr(message.file_name)+'">'}
   else if(message.type==='file'){const src=API_BASE+'/uploads/'+encodeURIComponent(message.file_path);content='<div class="file" data-url="'+escapeAttr(src)+'" data-filename="'+escapeAttr(message.file_name)+'" onclick="downloadFile(this.dataset.url,this.dataset.filename)"><span>📄</span><div><span>'+escapeHtml(message.file_name)+'</span><span> ('+formatFileSize(message.file_size)+')</span></div></div>'}
   let replyHtml='';
-  if(message.reply_to){const rm=messageCache.get(message.reply_to);if(rm){const rn=escapeHtml(rm.nickname||rm.username);const rc=rm.type==='image'?'[图片]':(rm.type==='file'?'[文件]':escapeHtml(rm.content.substring(0,50)));replyHtml='<div class="reply-preview"><span class="reply-name">'+rn+':</span> '+rc+'</div>'}}
+  if(message.reply_to){const rm=messageCache.get(message.reply_to);if(rm){const rn=escapeHtml(rm.nickname||rm.username);const rc=rm.type==='image'?'[图片]':(rm.type==='file'?'[文件]':escapeHtml(rm.content.replace(/<[^>]*>/g,'').substring(0,50)));replyHtml='<div class="reply-preview"><span class="reply-name">'+rn+':</span> '+rc+'</div>'}}
   div.innerHTML='<div class="avatar-wrapper"><img src="'+escapeAttr(avatarUrl)+'" class="message-avatar" alt="头像"><span class="online-dot '+(isOnline?'online':'')+'"></span></div><div class="message-body">'+replyHtml+'<div class="sender">'+displayName+'</div><div class="content">'+content+'</div><span class="time">'+time+'</span></div>';
   if(prepend){const l=container.querySelector('.load-more');if(l)l.after(div);else container.insertBefore(div,container.firstChild)}
   else{container.appendChild(div);container.scrollTop=container.scrollHeight}
@@ -1269,18 +1363,89 @@ function replyToMessage(id){
   const msg=messageCache.get(id);if(!msg)return;replyingToMsg=msg;
   const inputArea=document.querySelector('.input-area');let rb=document.getElementById('replyBox');
   if(!rb){rb=document.createElement('div');rb.id='replyBox';rb.className='reply-box';inputArea.parentNode.insertBefore(rb,inputArea)}
-  const rn=escapeHtml(msg.nickname||msg.username);const rc=msg.type==='image'?'[图片]':(msg.type==='file'?'[文件]':escapeHtml(msg.content.substring(0,30)));
+  const rn=escapeHtml(msg.nickname||msg.username);const rc=msg.type==='image'?'[图片]':(msg.type==='file'?'[文件]':escapeHtml(msg.content.replace(/<[^>]*>/g,'').substring(0,30)));
   rb.innerHTML='<span class="reply-label">引用 '+rn+':</span><span class="reply-content">'+rc+'</span><button class="reply-cancel" onclick="cancelReply()">✕</button>';
   document.getElementById('messageInput').focus();
 }
 function cancelReply(){replyingToMsg=null;const rb=document.getElementById('replyBox');if(rb)rb.remove()}
 
 function sendMessage(){
-  const input=document.getElementById('messageInput');const content=input.value.trim();
-  if(!content||!socket)return;const d={content};if(replyingToMsg)d.replyTo=replyingToMsg.id;
-  socket.emit('sendMessage',d);cancelReply();input.value='';
+  const input=document.getElementById('messageInput');const html=input.innerHTML.trim();
+  if(!html||html==='<br>'||!socket)return;
+  // Sanitize: keep only safe tags
+  const content=sanitizeOutgoing(html);
+  if(!content||!content.replace(/<[^>]*>/g,'').trim())return;
+  const d={content};if(replyingToMsg)d.replyTo=replyingToMsg.id;
+  socket.emit('sendMessage',d);cancelReply();input.innerHTML='';input.focus();
 }
-function handleKeyPress(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}}
+function handleKeyDown(e){
+  if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}
+}
+function execFmt(cmd,val){document.execCommand(cmd,false,val||null);document.getElementById('messageInput').focus()}
+// Selection save/restore for color pickers
+let savedRange=null;
+function saveSelection(){const sel=window.getSelection();if(sel.rangeCount>0)savedRange=sel.getRangeAt(0).cloneRange();else savedRange=null}
+function restoreSelection(){if(!savedRange)return;const sel=window.getSelection();sel.removeAllRanges();sel.addRange(savedRange)}
+function openColorPicker(type){
+  saveSelection();
+  const picker=document.getElementById(type==='fg'?'fgColorPicker':'bgColorPicker');
+  // Remove old listeners to prevent stacking
+  const newPicker=picker.cloneNode(true);
+  picker.parentNode.replaceChild(newPicker,picker);
+  newPicker.addEventListener('input',function(e){
+    restoreSelection();
+    if(type==='fg'){
+      document.execCommand('foreColor',false,e.target.value);
+      document.getElementById('fgColorBtn').style.color=e.target.value;
+    }else{
+      document.execCommand('hiliteColor',false,e.target.value);
+      document.getElementById('bgColorBtn').style.background=e.target.value;
+    }
+  });
+  newPicker.click();
+}
+function sanitizeOutgoing(html){
+  const tmp=document.createElement('div');tmp.innerHTML=html;
+  // Remove scripts, styles, and event handlers
+  tmp.querySelectorAll('script,style,link,meta,iframe,object,embed').forEach(el=>el.remove());
+  // Walk through all elements and strip non-whitelisted attributes
+  const allowed={'B':1,'STRONG':1,'I':1,'EM':1,'U':1,'S':1,'STRIKE':1,'SPAN':1,'FONT':1,'BR':1,'DIV':1,'P':1,'A':1};
+  const allowedAttrs={'style':1,'color':1,'href':1,'target':1,'rel':1};
+  function walk(node){
+    const children=[...node.childNodes];
+    children.forEach(ch=>{
+      if(ch.nodeType===1){
+        if(!allowed[ch.tagName]){
+          // Replace unknown tags with their content
+          while(ch.firstChild)ch.parentNode.insertBefore(ch.firstChild,ch);
+          ch.remove();
+        }else{
+          // Strip disallowed attributes
+          [...ch.attributes].forEach(a=>{if(!allowedAttrs[a.name])ch.removeAttribute(a.name)});
+          // Sanitize style: only allow safe properties
+          if(ch.style){
+            const s=ch.style;
+            const safe={};
+            if(s.color)safe.color=s.color;
+            if(s.backgroundColor)safe['background-color']=s.backgroundColor;
+            if(s.fontWeight)safe['font-weight']=s.fontWeight;
+            if(s.fontStyle)safe['font-style']=s.fontStyle;
+            if(s.textDecoration||s.textDecorationLine){safe['text-decoration']=s.textDecoration||s.textDecorationLine}
+            ch.removeAttribute('style');
+            const ss=Object.entries(safe).map(([k,v])=>k+':'+v).join(';');
+            if(ss)ch.setAttribute('style',ss);
+          }
+          walk(ch);
+        }
+      }
+    });
+  }
+  walk(tmp);
+  // Normalize: replace div/p with br for line breaks
+  let result=tmp.innerHTML;
+  result=result.replace(/<\/div>\s*<div>/gi,'<br>').replace(/<\/?div>/gi,'').replace(/<\/p>\s*<p>/gi,'<br>').replace(/<\/?p>/gi,'');
+  return result;
+}
 
 async function handleFileUpload(input){
   const file=input.files[0];if(!file)return;const fd=new FormData();fd.append('file',file);
@@ -1613,10 +1778,11 @@ app.post("/api/push/renew",(req,res)=>{
 function sendPushToOthers(senderUserId, senderName, messageText){
   const subs=db.prepare("SELECT * FROM push_subscriptions WHERE user_id != ?").all(senderUserId);
   const chatTitle=getSetting("chat_title")||"TeamChat";
-  const body=messageText.length>100?messageText.substring(0,100)+"...":messageText;
+  const body=messageText.replace(/<[^>]*>/g,'');
+  const trimBody=body.length>100?body.substring(0,100)+"...":body;
   const payload=JSON.stringify({
     title:chatTitle,
-    body:senderName+": "+body,
+    body:senderName+": "+trimBody,
     icon:"/images/icon-192.png",
     data:{url:"/"}
   });
@@ -1785,14 +1951,26 @@ io.on("connection",(socket)=>{
   socket.on("sendMessage",(data)=>{
     if(!data||typeof data!=="object")return;const{content,replyTo}=data;
     if(!content||typeof content!=="string"||content.trim().length===0)return;
-    const trimmed=content.trim().substring(0,5000);
+    // Server-side HTML sanitization
+    let trimmed=content.trim().substring(0,10000);
+    // Remove script/style/iframe/object/embed tags and their content
+    trimmed=trimmed.replace(/<(script|style|iframe|object|embed|link|meta)[^>]*>[\s\S]*?<\/\1>/gi,'');
+    trimmed=trimmed.replace(/<(script|style|iframe|object|embed|link|meta)[^>]*\/?>/gi,'');
+    // Remove event handlers (onclick, onerror, etc.)
+    trimmed=trimmed.replace(/\s+on[a-z]+\s*=\s*["'][^"']*["']/gi,'');
+    trimmed=trimmed.replace(/\s+on[a-z]+\s*=\s*[^\s>]+/gi,'');
+    // Remove javascript: URLs
+    trimmed=trimmed.replace(/href\s*=\s*["']javascript:[^"']*["']/gi,'href="#"');
+    if(!trimmed.replace(/<[^>]*>/g,'').trim()&&!/<br\s*\/?>/i.test(trimmed))return;
     const safeReplyTo=(Number.isInteger(replyTo)&&replyTo>0)?replyTo:null;
     const nowUtc=new Date().toISOString();
     const result=db.prepare("INSERT INTO messages (user_id,username,content,reply_to,created_at) VALUES (?,?,?,?,?)").run(socket.user.userId,socket.user.username,trimmed,safeReplyTo,nowUtc);
     const user=db.prepare("SELECT nickname,avatar FROM users WHERE id=?").get(socket.user.userId);
     const message={id:result.lastInsertRowid,username:socket.user.username,nickname:user?user.nickname:socket.user.username,avatar:user?user.avatar:null,content:trimmed,type:"text",reply_to:safeReplyTo,created_at:nowUtc};
     io.emit("newMessage",message);
-    sendPushToOthers(socket.user.userId, user?user.nickname:socket.user.username, trimmed);
+    // Strip HTML for push notification text
+    const pushText=trimmed.replace(/<[^>]*>/g,'').substring(0,200);
+    sendPushToOthers(socket.user.userId, user?user.nickname:socket.user.username, pushText);
   });
 
   socket.on("disconnect",()=>{if(userSocketMap.get(userId)===socket.id)userSocketMap.delete(userId);onlineUsers.delete(socket.id);broadcastOnlineUsers()});
