@@ -1217,6 +1217,9 @@ function urlBase64ToUint8Array(base64String){
 })();
 
 document.addEventListener('DOMContentLoaded',async()=>{
+  // 阻止工具栏按钮抢焦点 (移动端键盘不收起、视口不跳动)
+  var tb=document.getElementById('richToolbar');
+  if(tb){['mousedown','touchstart'].forEach(function(evt){tb.addEventListener(evt,function(e){if(e.target.closest('.tb-btn,.tb-color-btn'))e.preventDefault()},{passive:false})});}
   await initServiceWorker();
   await loadAppearancePublic();
   await loadNotice();
@@ -1384,7 +1387,7 @@ function handleKeyDown(e){
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}
 }
 function execFmt(cmd,val){document.execCommand(cmd,false,val||null);document.getElementById('messageInput').focus()}
-function insertNewline(){var sel=window.getSelection();if(!sel.rangeCount)return;var range=sel.getRangeAt(0);range.deleteContents();var br=document.createElement('br');range.insertNode(br);range.setStartAfter(br);range.setEndAfter(br);sel.removeAllRanges();sel.addRange(range);var inp=document.getElementById('messageInput');inp.scrollTop=inp.scrollHeight}
+function insertNewline(){var inp=document.getElementById('messageInput');inp.focus();var sel=window.getSelection();if(!sel.rangeCount)return;var range=sel.getRangeAt(0);range.deleteContents();var br=document.createElement('br');range.insertNode(br);range.setStartAfter(br);range.setEndAfter(br);sel.removeAllRanges();sel.addRange(range);inp.scrollTop=inp.scrollHeight}
 // Selection save/restore for color pickers
 let savedRange=null;
 function saveSelection(){const sel=window.getSelection();if(sel.rangeCount>0)savedRange=sel.getRangeAt(0).cloneRange();else savedRange=null}
