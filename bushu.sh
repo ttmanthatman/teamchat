@@ -509,23 +509,23 @@ SWEOF
     </div>
     <div id="messages" class="messages"><div class="load-more" onclick="loadMoreMessages()">加载更多</div></div>
     <div class="rich-toolbar" id="richToolbar">
-      <button type="button" class="tb-btn" onclick="execFmt('bold')" title="加粗"><b>B</b></button>
-      <button type="button" class="tb-btn" onclick="execFmt('italic')" title="斜体"><i>I</i></button>
-      <button type="button" class="tb-btn" onclick="execFmt('underline')" title="下划线"><u>U</u></button>
-      <button type="button" class="tb-btn" onclick="execFmt('strikeThrough')" title="删除线"><s>S</s></button>
+      <button type="button" class="tb-btn" onmousedown="event.preventDefault()" onclick="execFmt('bold')" title="加粗"><b>B</b></button>
+      <button type="button" class="tb-btn" onmousedown="event.preventDefault()" onclick="execFmt('italic')" title="斜体"><i>I</i></button>
+      <button type="button" class="tb-btn" onmousedown="event.preventDefault()" onclick="execFmt('underline')" title="下划线"><u>U</u></button>
+      <button type="button" class="tb-btn" onmousedown="event.preventDefault()" onclick="execFmt('strikeThrough')" title="删除线"><s>S</s></button>
       <span class="tb-sep"></span>
-      <label class="tb-color-wrap" title="文字颜色">
+      <label class="tb-color-wrap" title="文字颜色" onmousedown="event.preventDefault()">
         <button type="button" class="tb-color-btn" id="fgColorBtn" onclick="openColorPicker('fg')" style="color:#e53e3e">A</button>
         <input type="color" id="fgColorPicker" value="#e53e3e" class="tb-color-input">
       </label>
-      <label class="tb-color-wrap" title="背景色">
+      <label class="tb-color-wrap" title="背景色" onmousedown="event.preventDefault()">
         <button type="button" class="tb-color-btn tb-bg-style" id="bgColorBtn" onclick="openColorPicker('bg')" style="background:#fefcbf">A</button>
         <input type="color" id="bgColorPicker" value="#fefcbf" class="tb-color-input">
       </label>
       <span class="tb-sep"></span>
-      <button type="button" class="tb-btn" onclick="insertNewline()" title="换行">↵</button>
+      <button type="button" class="tb-btn" onmousedown="event.preventDefault()" onclick="insertNewline()" title="换行">↵</button>
       <span class="tb-sep"></span>
-      <button type="button" class="tb-btn" onclick="execFmt('removeFormat')" title="清除格式">✕</button>
+      <button type="button" class="tb-btn" onmousedown="event.preventDefault()" onclick="execFmt('removeFormat')" title="清除格式">✕</button>
     </div>
     <div class="input-area">
       <button onclick="document.getElementById('fileInput').click()" class="attach-btn">📎</button>
@@ -1217,9 +1217,6 @@ function urlBase64ToUint8Array(base64String){
 })();
 
 document.addEventListener('DOMContentLoaded',async()=>{
-  // 阻止工具栏按钮抢焦点 (移动端键盘不收起、视口不跳动)
-  var tb=document.getElementById('richToolbar');
-  if(tb){['mousedown','touchstart'].forEach(function(evt){tb.addEventListener(evt,function(e){if(e.target.closest('.tb-btn,.tb-color-btn'))e.preventDefault()},{passive:false})});}
   await initServiceWorker();
   await loadAppearancePublic();
   await loadNotice();
@@ -1386,12 +1383,16 @@ function sendMessage(){
 function handleKeyDown(e){
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}
 }
-function execFmt(cmd,val){document.execCommand(cmd,false,val||null);document.getElementById('messageInput').focus()}
-function insertNewline(){var inp=document.getElementById('messageInput');inp.focus();var sel=window.getSelection();if(!sel.rangeCount)return;var range=sel.getRangeAt(0);range.deleteContents();var br=document.createElement('br');range.insertNode(br);range.setStartAfter(br);range.setEndAfter(br);sel.removeAllRanges();sel.addRange(range);inp.scrollTop=inp.scrollHeight}
-// Selection save/restore for color pickers
+function execFmt(cmd,val){restoreInputFocus();document.execCommand(cmd,false,val||null)}
+function insertNewline(){restoreInputFocus();var sel=window.getSelection();if(!sel.rangeCount)return;var range=sel.getRangeAt(0);range.deleteContents();var br=document.createElement('br');range.insertNode(br);range.setStartAfter(br);range.setEndAfter(br);sel.removeAllRanges();sel.addRange(range);var inp=document.getElementById('messageInput');inp.scrollTop=inp.scrollHeight}
+// 持续追踪输入框内光标位置，工具栏操作后可精确恢复
+let lastInputRange=null;
+document.addEventListener('selectionchange',function(){var sel=window.getSelection();var inp=document.getElementById('messageInput');if(inp&&sel.rangeCount>0&&inp.contains(sel.anchorNode)){lastInputRange=sel.getRangeAt(0).cloneRange()}});
+function restoreInputFocus(){var inp=document.getElementById('messageInput');inp.focus();if(lastInputRange){try{var sel=window.getSelection();sel.removeAllRanges();sel.addRange(lastInputRange)}catch(e){}}}
+// Selection save/restore for color pickers (reuse lastInputRange)
 let savedRange=null;
-function saveSelection(){const sel=window.getSelection();if(sel.rangeCount>0)savedRange=sel.getRangeAt(0).cloneRange();else savedRange=null}
-function restoreSelection(){if(!savedRange)return;const sel=window.getSelection();sel.removeAllRanges();sel.addRange(savedRange)}
+function saveSelection(){savedRange=lastInputRange?lastInputRange.cloneRange():null}
+function restoreSelection(){if(!savedRange)return;var inp=document.getElementById('messageInput');inp.focus();var sel=window.getSelection();sel.removeAllRanges();sel.addRange(savedRange)}
 function openColorPicker(type){
   saveSelection();
   const picker=document.getElementById(type==='fg'?'fgColorPicker':'bgColorPicker');
