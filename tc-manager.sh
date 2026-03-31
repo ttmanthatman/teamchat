@@ -179,7 +179,9 @@ function getInstances(){
         db.close();
       }catch(e){}
     }
-    instances.push({name,dir,port,status,version,dbSize,userCount,msgCount,pm2info,...getNginxInfo(name,port)});
+    let scriptFile="";
+    try{const sf=path.join(dir,".deploy_script");if(fs.existsSync(sf))scriptFile=fs.readFileSync(sf,"utf-8").trim()}catch(e){}
+    instances.push({name,dir,port,status,version,dbSize,userCount,msgCount,pm2info,scriptFile,...getNginxInfo(name,port)});
   }
   return instances;
 }
@@ -249,12 +251,14 @@ app.delete("/api/instances/:name",auth,(req,res)=>{
 // ===== 脚本版本管理 =====
 app.get("/api/scripts",auth,(req,res)=>{
   const files=[];
+  const instances=getInstances();
   try{fs.readdirSync(UPLOAD_DIR).forEach(f=>{
     if(!f.endsWith(".sh"))return;
     const stat=fs.statSync(path.join(UPLOAD_DIR,f));
     let ver="";
     try{const c=fs.readFileSync(path.join(UPLOAD_DIR,f),"utf-8").substring(0,500);const m=c.match(/v[\d.]+/);if(m)ver=m[0]}catch(e){}
-    files.push({name:f,size:stat.size,time:stat.mtime,version:ver});
+    const usedBy=instances.filter(i=>i.scriptFile===f).map(i=>i.name);
+    files.push({name:f,size:stat.size,time:stat.mtime,version:ver,usedBy});
   })}catch(e){}
   files.sort((a,b)=>new Date(b.time)-new Date(a.time));
   res.json(files);
@@ -314,6 +318,60 @@ app.post("/api/deploy",auth,(req,res)=>{
 
 app.get("/api/deploy/:jobId/log",auth,(req,res)=>{
   const logFile=path.join(BACKUP_DIR,`deploy-${req.params.jobId}.log`);
+  if(!fs.existsSync(logFile))return res.json({log:"日志不存在"});
+  res.json({log:fs.readFileSync(logFile,"utf-8")});
+});
+
+// 给实例绑定脚本
+app.post("/api/instances/:name/bind-script",auth,(req,res)=>{
+  const inst=getInstances().find(i=>i.name===req.params.name);
+  if(!inst)return res.json({success:false,message:"实例不存在"});
+  const{script}=req.body;
+  if(!script)return res.json({success:false,message:"请选择脚本"});
+  const fp=path.join(UPLOAD_DIR,path.basename(script));
+  if(!fs.existsSync(fp))return res.json({success:false,message:"脚本文件不存在"});
+  try{fs.writeFileSync(path.join(inst.dir,".deploy_script"),script);
+    res.json({success:true,message:`已绑定 ${script} 到 ${inst.name}`});
+  }catch(e){res.json({success:false,message:e.message})}
+});
+
+// 用绑定的脚本升级实例
+app.post("/api/instances/:name/upgrade",auth,(req,res)=>{
+  const inst=getInstances().find(i=>i.name===req.params.name);
+  if(!inst)return res.json({success:false,message:"实例不存在"});
+  const scriptName=req.body.script||inst.scriptFile;
+  if(!scriptName)return res.json({success:false,message:"该实例未绑定脚本，请先绑定"});
+  const fp=path.join(UPLOAD_DIR,path.basename(scriptName));
+  if(!fs.existsSync(fp))return res.json({success:false,message:"脚本文件不存在: "+scriptName});
+  const jobId=crypto.randomBytes(8).toString("hex");
+  const logFile=path.join(BACKUP_DIR,`upgrade-${jobId}.log`);
+  fs.writeFileSync(logFile,`升级实例 ${inst.name}\n脚本: ${scriptName}\n端口: ${inst.port}\n\n`);
+  // 备份数据库
+  const dbPath=path.join(inst.dir,"database.sqlite");
+  if(fs.existsSync(dbPath)){
+    const bk=path.join(BACKUP_DIR,`${inst.name}-pre-upgrade-${Date.now()}.sqlite`);
+    try{fs.copyFileSync(dbPath,bk);fs.appendFileSync(logFile,"已自动备份数据库: "+path.basename(bk)+"\n\n")}catch(e){}
+  }
+  const child=spawn("bash",[fp,"--install"],{
+    env:{...process.env,NONINTERACTIVE:"1",DEPLOY_PORT:inst.port||"3000",DEPLOY_ADMIN:"admin",DEPLOY_PASS:"admin123",DEPLOY_INSTANCE:inst.name},
+    stdio:["pipe","pipe","pipe"]
+  });
+  const logStream=fs.createWriteStream(logFile,{flags:"a"});
+  child.stdout.pipe(logStream);child.stderr.pipe(logStream);
+  child.on("close",(code)=>{
+    fs.appendFileSync(logFile,`\n升级${code===0?"成功":"失败"}(退出码:${code})\n`);
+  });
+  setTimeout(()=>{try{child.stdin.write("1\n")}catch(e){}},1000);
+  setTimeout(()=>{try{child.stdin.write("admin\n")}catch(e){}},2000);
+  setTimeout(()=>{try{child.stdin.write("admin123\n")}catch(e){}},3000);
+  setTimeout(()=>{try{child.stdin.write((inst.port||"3000")+"\n")}catch(e){}},4000);
+  setTimeout(()=>{try{child.stdin.write("n\n")}catch(e){}},5000);
+  setTimeout(()=>{try{child.stdin.write("y\n")}catch(e){}},6000);
+  res.json({success:true,jobId});
+});
+
+app.get("/api/upgrade/:jobId/log",auth,(req,res)=>{
+  const logFile=path.join(BACKUP_DIR,`upgrade-${req.params.jobId}.log`);
   if(!fs.existsSync(logFile))return res.json({log:"日志不存在"});
   res.json({log:fs.readFileSync(logFile,"utf-8")});
 });
@@ -698,6 +756,13 @@ async function renderInstances(){
         </div>
       </div>
       <div class="file-size">路径: ${i.dir}${i.domain?` · 域名: <strong>${i.domain}</strong>`:""}${i.ssl?' · <span class="badge badge-green">HTTPS</span>':""}${i.sslExpiry?` · 到期: ${i.sslExpiry}`:""}</div>
+      <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border);display:flex;align-items:center;gap:10px">
+        <span class="file-size" style="white-space:nowrap">📁 部署脚本:</span>
+        ${i.scriptFile?`<span class="file-size"><strong>${i.scriptFile}</strong></span>
+          <button class="btn-sm" onclick="showUpgradeModal('${i.name}','${i.scriptFile}')">🔄 升级</button>`
+          :'<span class="file-size" style="color:var(--yellow)">未绑定</span>'}
+        <button class="btn-sm btn-ghost" onclick="showBindScript('${i.name}','${i.scriptFile||""}')">📎 ${i.scriptFile?"更换":"绑定"}脚本</button>
+      </div>
     </div>`).join("")}
     ${instances.length===0?'<div class="card empty">暂无部署的实例，请先上传脚本并部署</div>':""}`;
 }
@@ -720,6 +785,54 @@ async function showLogs(name){
   showModal("📋 "+name+" 日志",`<div class="log-box">${escHtml(d.output||"无日志")}</div>`);
 }
 
+async function showBindScript(instName,current){
+  const scripts=await api("/api/scripts");
+  if(!scripts.length)return toast("请先上传脚本文件",false);
+  showModal("📎 绑定脚本 — "+instName,`
+    <label>选择部署脚本</label>
+    <select id="bindScriptSel">
+      <option value="">-- 请选择 --</option>
+      ${scripts.map(s=>`<option value="${s.name}" ${s.name===current?"selected":""}>${s.name} ${s.version?"("+s.version+")":""} [${fmtSize(s.size)}]</option>`).join("")}
+    </select>
+    <div class="btn-row"><button class="btn-ghost" onclick="closeModal()">取消</button>
+    <button onclick="doBindScript('${instName}')">确认绑定</button></div>`);
+}
+
+async function doBindScript(instName){
+  const script=document.getElementById("bindScriptSel").value;
+  if(!script)return toast("请选择脚本",false);
+  const d=await api(`/api/instances/${instName}/bind-script`,{method:"POST",body:{script}});
+  toast(d.message||"操作完成",d.success);
+  if(d.success){closeModal();renderInstances()}
+}
+
+function showUpgradeModal(instName,scriptFile){
+  showModal("🔄 升级实例 — "+instName,`
+    <label>使用脚本: <strong>${scriptFile}</strong></label>
+    <div style="font-size:12px;color:var(--yellow);margin:12px 0;padding:10px;background:rgba(234,179,8,.1);border-radius:var(--radius)">
+      ⚠️ 升级前会自动备份数据库。升级会用新脚本重新部署，保留现有数据。
+    </div>
+    <div class="btn-row"><button class="btn-ghost" onclick="closeModal()">取消</button>
+    <button class="btn-green" onclick="doUpgrade('${instName}','${scriptFile}')">开始升级</button></div>
+    <div id="upgradeLog" style="margin-top:16px"></div>`);
+}
+
+async function doUpgrade(instName,scriptFile){
+  const d=await api(`/api/instances/${instName}/upgrade`,{method:"POST",body:{script:scriptFile}});
+  if(!d.success)return toast(d.message,false);
+  const logEl=document.getElementById("upgradeLog");
+  logEl.innerHTML='<div class="log-box" id="upgradeLogBox">升级中...</div>';
+  const poll=setInterval(async()=>{
+    try{const r=await api("/api/upgrade/"+d.jobId+"/log");
+      const box=document.getElementById("upgradeLogBox");
+      if(box){box.textContent=r.log;box.scrollTop=999999}
+      if(r.log.includes("升级成功")||r.log.includes("升级失败")){clearInterval(poll);
+        toast(r.log.includes("升级成功")?"升级完成":"升级可能有问题",r.log.includes("升级成功"));
+      }
+    }catch(e){clearInterval(poll)}
+  },2000);
+}
+
 // ===== Scripts =====
 async function renderScripts(){
   const scripts=await api("/api/scripts");
@@ -735,8 +848,10 @@ async function renderScripts(){
       </div>
     </div>
     <div class="card"><h3>已上传的脚本</h3>
-    ${scripts.length?`<table><thead><tr><th>文件名</th><th>版本</th><th>大小</th><th>上传时间</th><th>操作</th></tr></thead><tbody>
-      ${scripts.map(s=>`<tr><td>${s.name}</td><td>${s.version||"-"}</td><td>${fmtSize(s.size)}</td><td>${fmtTime(s.time)}</td>
+    ${scripts.length?`<table><thead><tr><th>文件名</th><th>版本</th><th>大小</th><th>关联实例</th><th>上传时间</th><th>操作</th></tr></thead><tbody>
+      ${scripts.map(s=>`<tr><td>${s.name}</td><td>${s.version||"-"}</td><td>${fmtSize(s.size)}</td>
+        <td>${s.usedBy&&s.usedBy.length?s.usedBy.map(n=>'<span class="badge badge-green">'+n+'</span>').join(" "):'<span class="file-size">未绑定</span>'}</td>
+        <td>${fmtTime(s.time)}</td>
         <td class="actions">
           <button class="btn-sm btn-green" onclick="showDeployModal('${s.name}')">部署</button>
           <button class="btn-sm btn-red" onclick="deleteScript('${s.name}')">删除</button>
