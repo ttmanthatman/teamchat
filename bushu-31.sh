@@ -1,7 +1,7 @@
 #!/bin/bash
 #===============================================================================
-# TeamChat 一键部署脚本 (全功能增强版 v7.5)
-# 变更: 移除富文本编辑器，保留接龙按钮，修复附件按钮
+# TeamChat 一键部署脚本 (全功能增强版 v8.0)
+# 变更: 修复手机端发送按钮，增加换行按钮，新增多实例部署
 #===============================================================================
 
 set -e
@@ -20,7 +20,7 @@ APP_DIR="/var/www/teamchat"
 
 print_header() {
     echo -e "\n${CYAN}================================================${NC}"
-    echo -e "${CYAN}  TeamChat 一键部署脚本 v7.5${NC}"
+    echo -e "${CYAN}  TeamChat 一键部署脚本 v8.0${NC}"
     echo -e "${CYAN}================================================${NC}\n"
 }
 
@@ -35,9 +35,10 @@ print_menu() {
     echo -e "  ${GREEN}5${NC}. 修改配置参数"
     echo -e "  ${GREEN}6${NC}. 配置 SSL/HTTPS"
     echo -e "  ${GREEN}7${NC}. 卸载程序"
+    echo -e "  ${GREEN}8${NC}. 多实例管理"
     echo -e "  ${GREEN}0${NC}. 退出"
     echo -e "${BLUE}================================================${NC}"
-    echo -n "请输入选项 [0-7]: "
+    echo -n "请输入选项 [0-8]: "
 }
 
 check_root() {
@@ -468,7 +469,7 @@ SWEOF
   <link rel="icon" type="image/png" sizes="192x192" href="/images/icon-192.png">
   <link rel="icon" type="image/png" sizes="96x96" href="/images/icon-96.png">
   <title>团队聊天室</title>
-  <link rel="stylesheet" href="style.css?v=20260330">
+  <link rel="stylesheet" href="style.css?v=20260331">
 </head>
 <body>
   <div id="loginPage" class="page">
@@ -513,7 +514,8 @@ SWEOF
     <div class="input-area">
       <button id="attachBtn" class="attach-btn" title="添加附件">📎</button>
       <input type="file" id="fileInput" hidden onchange="handleFileUpload(this)">
-      <textarea id="messageInput" class="text-input" placeholder="输入消息... (Shift+Enter 换行)" rows="1" onkeydown="handleKeyDown(event)"></textarea>
+      <textarea id="messageInput" class="text-input" placeholder="输入消息... (Shift+Enter 换行)" rows="1" enterkeyhint="send" onkeydown="handleKeyDown(event)"></textarea>
+      <button id="newlineBtn" class="newline-btn" title="换行" onmousedown="event.preventDefault()" onclick="insertNewline()">⏎</button>
       <button id="chainBtn" class="chain-btn-inline" onclick="showChainDialog()" title="发起接龙">🚂</button>
       <button onmousedown="event.preventDefault()" onclick="sendMessage()" class="send-btn" id="sendBtn">发送</button>
     </div>
@@ -757,7 +759,7 @@ SWEOF
   </div>
 
   <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
-  <script src="app.js?v=20260330"></script>
+  <script src="app.js?v=20260331"></script>
 </body>
 </html>
 HTMLEOF
@@ -826,6 +828,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .attach-btn{width:44px;background:#f0f0f0;font-size:20px}.send-btn{min-width:44px;padding:0 18px;background:#667eea;color:#fff;font-weight:500;white-space:nowrap}
 .chain-btn-inline{width:44px;height:44px;border-radius:22px;border:none;background:#f0f0f0;font-size:20px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s}
 .chain-btn-inline:hover{background:#e0e4f8}
+.newline-btn{width:44px;height:44px;border-radius:22px;border:none;background:#f0f0f0;font-size:18px;cursor:pointer;display:none;align-items:center;justify-content:center;flex-shrink:0;transition:background .15s;color:#666;font-weight:700}
+.newline-btn:hover{background:#e0e4f8}
+@media screen and (max-width:768px){.newline-btn{display:flex}}
 .reply-box{background:#f0f2ff;padding:8px 16px;display:flex;align-items:center;gap:8px;font-size:13px;color:#555;border-left:3px solid #667eea}
 .reply-box .reply-label{font-weight:600;color:#667eea;white-space:nowrap}
 .reply-box .reply-content{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1283,16 +1288,23 @@ document.addEventListener('DOMContentLoaded',async()=>{
     if(attachBtn&&fileInput){
       attachBtn.addEventListener('click',function(e){e.preventDefault();fileInput.click()});
     }
-    // 对发送按钮阻止焦点抢夺(保持键盘不收起)
+    // 对发送按钮阻止焦点抢夺(保持键盘不收起)，并在触摸结束时发送
     var sendBtn=document.getElementById('sendBtn');
     if(sendBtn){
       sendBtn.addEventListener('mousedown',function(e){e.preventDefault()});
       sendBtn.addEventListener('touchstart',function(e){e.preventDefault()},{passive:false});
+      sendBtn.addEventListener('touchend',function(e){e.preventDefault();sendMessage()},{passive:false});
     }
     // 接龙按钮也阻止焦点抢夺
     var chainBtn=document.getElementById('chainBtn');
     if(chainBtn){
       chainBtn.addEventListener('mousedown',function(e){e.preventDefault()});
+    }
+    // 换行按钮阻止焦点抢夺
+    var newlineBtn=document.getElementById('newlineBtn');
+    if(newlineBtn){
+      newlineBtn.addEventListener('touchstart',function(e){e.preventDefault()},{passive:false});
+      newlineBtn.addEventListener('touchend',function(e){e.preventDefault();insertNewline()},{passive:false});
     }
   })();
   // textarea 自动调整高度
@@ -1584,6 +1596,14 @@ function sendMessage(){
   if(!text||!socket)return;
   const d={content:escapeHtml(text)};if(replyingToMsg)d.replyTo=replyingToMsg.id;
   socket.emit('sendMessage',d);cancelReply();input.value='';input.style.height='auto';input.focus();
+}
+function insertNewline(){
+  const ta=document.getElementById('messageInput');if(!ta)return;
+  const start=ta.selectionStart,end=ta.selectionEnd;
+  ta.value=ta.value.substring(0,start)+'\n'+ta.value.substring(end);
+  ta.selectionStart=ta.selectionEnd=start+1;
+  ta.style.height='auto';ta.style.height=Math.min(ta.scrollHeight,120)+'px';
+  ta.focus();
 }
 function handleKeyDown(e){
   if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();sendMessage()}
@@ -2368,6 +2388,246 @@ EOF
     echo -e "${GREEN}✅ Nginx 配置完成${NC}"
 }
 
+#===============================================================================
+# 多实例管理
+#===============================================================================
+
+INSTANCES_DIR="/var/www"
+INSTANCES_PREFIX="teamchat"
+
+list_instances() {
+    local found=0
+    echo ""
+    echo -e "${CYAN}  当前已部署的实例:${NC}"
+    echo -e "${CYAN}  ──────────────────────────────────────${NC}"
+    # 默认实例
+    if [ -d "$APP_DIR/node_modules" ] && [ -f "$APP_DIR/server.js" ]; then
+        local dport
+        dport=$(grep -oP 'const PORT = process\.env\.PORT \|\| \K\d+' "$APP_DIR/server.js" 2>/dev/null || echo "3000")
+        local dstatus="stopped"
+        pm2 describe teamchat >/dev/null 2>&1 && dstatus="running"
+        printf "  ${GREEN}%-18s${NC} 端口: %-6s 状态: %s 路径: %s\n" "teamchat (默认)" "$dport" "$dstatus" "$APP_DIR"
+        found=1
+    fi
+    # 额外实例
+    for dir in "$INSTANCES_DIR"/${INSTANCES_PREFIX}-*; do
+        [ -d "$dir" ] || continue
+        [ -f "$dir/server.js" ] || continue
+        local name=$(basename "$dir")
+        local pm2name="$name"
+        local iport
+        iport=$(grep -oP 'const PORT = process\.env\.PORT \|\| \K\d+' "$dir/server.js" 2>/dev/null || echo "?")
+        local istatus="stopped"
+        pm2 describe "$pm2name" >/dev/null 2>&1 && istatus="running"
+        printf "  ${GREEN}%-18s${NC} 端口: %-6s 状态: %s 路径: %s\n" "$pm2name" "$iport" "$istatus" "$dir"
+        found=1
+    done
+    if [ "$found" -eq 0 ]; then
+        echo -e "  ${YELLOW}暂无已部署的实例${NC}"
+    fi
+    echo -e "${CYAN}  ──────────────────────────────────────${NC}"
+    echo ""
+}
+
+do_multi_instance() {
+    echo -e "\n${YELLOW}========== 多实例管理 ==========${NC}"
+    list_instances
+    echo -e "  ${GREEN}1${NC}. 部署新实例"
+    echo -e "  ${GREEN}2${NC}. 启动/重启指定实例"
+    echo -e "  ${GREEN}3${NC}. 停止指定实例"
+    echo -e "  ${GREEN}4${NC}. 查看指定实例日志"
+    echo -e "  ${GREEN}5${NC}. 删除指定实例"
+    echo -e "  ${GREEN}0${NC}. 返回主菜单"
+    printf "请选择: "; read -r mi_choice
+    case $mi_choice in
+        1) do_new_instance ;;
+        2) do_instance_action "restart" ;;
+        3) do_instance_action "stop" ;;
+        4) do_instance_action "logs" ;;
+        5) do_instance_action "delete" ;;
+        0) return ;;
+        *) echo -e "${RED}无效${NC}" ;;
+    esac
+}
+
+do_new_instance() {
+    echo -e "\n${CYAN}>>> 部署新实例 <<<${NC}\n"
+    # 实例名称
+    local inst_name=""
+    while true; do
+        printf "  实例名称 (英文，如 team2, sales): "; read -r inst_name
+        if [ -z "$inst_name" ]; then echo -e "${RED}名称不能为空${NC}"; continue; fi
+        if [[ ! "$inst_name" =~ ^[a-zA-Z0-9_-]+$ ]]; then echo -e "${RED}只允许英文字母、数字、下划线和短横线${NC}"; continue; fi
+        if [ "$inst_name" = "teamchat" ]; then echo -e "${RED}此名称已被默认实例使用${NC}"; continue; fi
+        local inst_dir="$INSTANCES_DIR/${INSTANCES_PREFIX}-${inst_name}"
+        if [ -d "$inst_dir" ] && [ -f "$inst_dir/server.js" ]; then echo -e "${RED}实例 ${inst_name} 已存在${NC}"; continue; fi
+        break
+    done
+
+    local inst_dir="$INSTANCES_DIR/${INSTANCES_PREFIX}-${inst_name}"
+    local pm2name="${INSTANCES_PREFIX}-${inst_name}"
+
+    # 复用 IP 选择
+    local INST_DOMAIN
+    INST_DOMAIN=$(show_ip_menu)
+
+    echo ""
+    while true; do printf "  管理员用户名 [admin]: "; read -r input; ADMIN_USER=${input:-admin}; validate_input "$ADMIN_USER" "用户名" && break; done
+    while true; do printf "  管理员密码 [admin123]: "; read -r input; ADMIN_PASS=${input:-admin123}; [ ${#ADMIN_PASS} -ge 6 ] && break; echo -e "${RED}密码不能小于6位${NC}"; done
+    while true; do printf "  服务端口 (不能与其他实例重复): "; read -r input
+        if [ -z "$input" ]; then echo -e "${RED}端口不能为空${NC}"; continue; fi
+        PORT="$input"
+        [[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] && break
+        echo -e "${RED}端口无效${NC}"
+    done
+
+    echo ""
+    echo "==========================================="
+    echo "  实例名: $pm2name"
+    echo "  域名/IP: $INST_DOMAIN | 端口: $PORT"
+    echo "  管理员: $ADMIN_USER | 路径: $inst_dir"
+    echo "==========================================="
+    printf "确认部署? (y/n): "; read -r confirm; [ "$confirm" != "y" ] && { echo "已取消"; return 0; }
+
+    # 保存原 APP_DIR，临时切换
+    local ORIG_APP_DIR="$APP_DIR"
+    APP_DIR="$inst_dir"
+
+    detect_os
+    # 依赖只装一次（检查 node 是否可用）
+    command -v node >/dev/null 2>&1 || { install_dependencies; install_nodejs; }
+    command -v pm2 >/dev/null 2>&1 || npm install -g pm2
+
+    write_app_files
+    install_npm_deps
+    init_database
+
+    # 启动实例（使用自定义 pm2 名称）
+    echo -e "\n${YELLOW}启动实例 $pm2name ...${NC}"
+    pm2 stop "$pm2name" > /dev/null 2>&1 || true
+    pm2 delete "$pm2name" > /dev/null 2>&1 || true
+    cd "$inst_dir"; PORT=$PORT pm2 start server.js --name "$pm2name"; pm2 save
+    pm2 startup systemd -u root --hp /root > /dev/null 2>&1 || pm2 startup > /dev/null 2>&1 || true
+    pm2 save
+
+    # 生成独立 nginx 配置
+    local nginx_conf="/etc/nginx/conf.d/${pm2name}.conf"
+    cat > "$nginx_conf" <<EOF
+server {
+    listen 80;
+    server_name $INST_DOMAIN;
+    client_max_body_size 120M;
+    location / {
+        proxy_pass http://127.0.0.1:$PORT;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+EOF
+    if nginx -t 2>&1; then
+        systemctl enable nginx 2>/dev/null || true; systemctl reload nginx
+        echo -e "${GREEN}✅ Nginx 配置完成${NC}"
+    else
+        echo -e "${YELLOW}Nginx 配置测试失败，请手动检查 $nginx_conf${NC}"
+    fi
+
+    # 恢复 APP_DIR
+    APP_DIR="$ORIG_APP_DIR"
+
+    echo ""
+    echo -e "${GREEN}================================================${NC}"
+    echo -e "${GREEN}  🎉 实例 $pm2name 部署完成！${NC}"
+    echo -e "${GREEN}================================================${NC}"
+    echo -e "  访问: http://${INST_DOMAIN}:${PORT}"
+    echo -e "  管理员: $ADMIN_USER / $ADMIN_PASS"
+    echo -e "  PM2 名称: $pm2name"
+    echo -e "  数据路径: $inst_dir"
+    echo -e "${GREEN}================================================${NC}"
+    echo ""
+}
+
+select_instance() {
+    local action_name="$1"
+    local instances=()
+    local idx=0
+
+    # 默认实例
+    if [ -d "$APP_DIR/node_modules" ] && [ -f "$APP_DIR/server.js" ]; then
+        instances+=("teamchat|$APP_DIR")
+        idx=$((idx+1))
+        echo "  $idx. teamchat (默认)"
+    fi
+    # 额外实例
+    for dir in "$INSTANCES_DIR"/${INSTANCES_PREFIX}-*; do
+        [ -d "$dir" ] || continue
+        [ -f "$dir/server.js" ] || continue
+        local name=$(basename "$dir")
+        instances+=("$name|$dir")
+        idx=$((idx+1))
+        echo "  $idx. $name"
+    done
+    if [ "$idx" -eq 0 ]; then echo -e "${YELLOW}暂无可用实例${NC}"; return 1; fi
+    printf "请选择要${action_name}的实例 [1]: "; read -r sel
+    sel=${sel:-1}
+    if [[ ! "$sel" =~ ^[0-9]+$ ]] || [ "$sel" -lt 1 ] || [ "$sel" -gt "$idx" ]; then
+        echo -e "${RED}无效选择${NC}"; return 1
+    fi
+    SELECTED_INSTANCE="${instances[$((sel-1))]}"
+    SELECTED_PM2NAME="${SELECTED_INSTANCE%%|*}"
+    SELECTED_DIR="${SELECTED_INSTANCE##*|}"
+    return 0
+}
+
+do_instance_action() {
+    local action="$1"
+    echo ""
+    local action_label=""
+    case $action in
+        restart) action_label="启动/重启" ;;
+        stop) action_label="停止" ;;
+        logs) action_label="查看日志" ;;
+        delete) action_label="删除" ;;
+    esac
+    select_instance "$action_label" || return
+    case $action in
+        restart)
+            if pm2 describe "$SELECTED_PM2NAME" >/dev/null 2>&1; then
+                pm2 restart "$SELECTED_PM2NAME"
+            else
+                cd "$SELECTED_DIR"; pm2 start server.js --name "$SELECTED_PM2NAME"; pm2 save
+            fi
+            echo -e "${GREEN}✅ 实例 $SELECTED_PM2NAME 已启动/重启${NC}" ;;
+        stop)
+            pm2 stop "$SELECTED_PM2NAME" 2>/dev/null || true
+            echo -e "${GREEN}✅ 实例 $SELECTED_PM2NAME 已停止${NC}" ;;
+        logs)
+            pm2 logs "$SELECTED_PM2NAME" --lines 50 --nostream ;;
+        delete)
+            if [ "$SELECTED_PM2NAME" = "teamchat" ]; then
+                echo -e "${YELLOW}默认实例请使用主菜单「卸载程序」功能${NC}"; return
+            fi
+            echo -e "${RED}警告: 将删除实例 $SELECTED_PM2NAME 的所有数据！${NC}"
+            printf "输入实例名 '${SELECTED_PM2NAME}' 确认删除: "; read -r confirm_del
+            if [ "$confirm_del" != "$SELECTED_PM2NAME" ]; then echo "已取消"; return; fi
+            pm2 stop "$SELECTED_PM2NAME" 2>/dev/null || true
+            pm2 delete "$SELECTED_PM2NAME" 2>/dev/null || true
+            pm2 save 2>/dev/null || true
+            rm -rf "$SELECTED_DIR"
+            rm -f "/etc/nginx/conf.d/${SELECTED_PM2NAME}.conf"
+            nginx -t 2>/dev/null && systemctl reload nginx 2>/dev/null || true
+            echo -e "${GREEN}✅ 实例 $SELECTED_PM2NAME 已完全删除${NC}" ;;
+    esac
+}
+
+#===============================================================================
+
 do_install() {
     print_header; DOMAIN=$(show_ip_menu)
     echo ""; echo -e "请配置以下参数:"
@@ -2506,16 +2766,16 @@ check_root
 
 if [ $# -gt 0 ]; then
     case $1 in
-        --install|-i) do_install; exit 0 ;; --ssl|-s) do_ssl; exit 0 ;; --uninstall|-u) do_uninstall; exit 0 ;;
+        --install|-i) do_install; exit 0 ;; --ssl|-s) do_ssl; exit 0 ;; --multi|-m) do_multi_instance; exit 0 ;; --uninstall|-u) do_uninstall; exit 0 ;;
         --uninstall-force) echo -e "${RED}警告: 删除所有数据！${NC}"; printf "输入 DELETE: "; read -r cf; [ "$cf" != "DELETE" ]&&exit 0
             pm2 stop teamchat 2>/dev/null||true; pm2 delete teamchat 2>/dev/null||true; pm2 save 2>/dev/null||true; rm -rf "$APP_DIR"; rm -f /etc/nginx/conf.d/teamchat.conf; nginx -t 2>/dev/null&&systemctl reload nginx 2>/dev/null||true; echo -e "${GREEN}✅ 完全卸载${NC}"; exit 0 ;;
-        --help|-h) echo "用法: sudo $0 [--install|--ssl|--uninstall|--uninstall-force|--help]"; exit 0 ;;
+        --help|-h) echo "用法: sudo $0 [--install|--ssl|--uninstall|--uninstall-force|--multi|--help]"; exit 0 ;;
         *) echo "未知选项: $1"; exit 1 ;;
     esac
 fi
 
 while true; do
     print_menu; read choice
-    case $choice in 1) do_install;; 2) do_restart;; 3) do_stop;; 4) do_logs;; 5) do_modify;; 6) do_ssl;; 7) do_uninstall;; 0) echo -e "${GREEN}再见！${NC}"; exit 0;; *) echo -e "${RED}无效${NC}";; esac
+    case $choice in 1) do_install;; 2) do_restart;; 3) do_stop;; 4) do_logs;; 5) do_modify;; 6) do_ssl;; 7) do_uninstall;; 8) do_multi_instance;; 0) echo -e "${GREEN}再见！${NC}"; exit 0;; *) echo -e "${RED}无效${NC}";; esac
     echo ""
 done
