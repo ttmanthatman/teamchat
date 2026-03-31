@@ -27,7 +27,7 @@ print_menu(){
     echo -n "请选择 [0-6]: "
 }
 
-check_root(){ [ "$EUID" -ne 0 ]&&{ echo -e "${RED}请用 sudo 运行${NC}";exit 1; }; }
+check_root(){ if [ "$EUID" -ne 0 ]; then echo -e "${RED}请用 sudo 运行${NC}";exit 1;fi; }
 
 install_node(){
     if ! command -v node >/dev/null 2>&1;then
@@ -49,13 +49,13 @@ do_install(){
 
     # 管理面板密码
     local current_pass=""
-    [ -f "$MGR_DIR/.env" ]&&current_pass=$(grep '^ADMIN_PASS=' "$MGR_DIR/.env" 2>/dev/null|cut -d= -f2)
+    if [ -f "$MGR_DIR/.env" ]; then current_pass=$(grep '^ADMIN_PASS=' "$MGR_DIR/.env" 2>/dev/null|cut -d= -f2); fi
     if [ -n "$current_pass" ];then
         echo -e "${GREEN}检测到已有密码配置${NC}"
         printf "是否修改密码? (y/n) [n]: ";read -r chg
         if [ "$chg" = "y" ];then
             printf "新管理密码: ";read -r MGR_PASS
-            [ -z "$MGR_PASS" ]&&MGR_PASS="$current_pass"
+            if [ -z "$MGR_PASS" ]; then MGR_PASS="$current_pass"; fi
         else MGR_PASS="$current_pass";fi
     else
         printf "设置管理密码 [admin888]: ";read -r MGR_PASS
@@ -63,7 +63,7 @@ do_install(){
     fi
 
     local current_port=""
-    [ -f "$MGR_DIR/.env" ]&&current_port=$(grep '^PORT=' "$MGR_DIR/.env" 2>/dev/null|cut -d= -f2)
+    if [ -f "$MGR_DIR/.env" ]; then current_port=$(grep '^PORT=' "$MGR_DIR/.env" 2>/dev/null|cut -d= -f2); fi
     if [ -n "$current_port" ];then
         printf "管理面板端口 [$current_port]: ";read -r input
         MGR_PORT=${input:-$current_port}
@@ -1002,10 +1002,10 @@ do_modify(){
     echo "  1. 修改密码  2. 修改端口  0. 返回"
     printf "选择: ";read -r c
     case $c in
-        1) printf "新密码: ";read -r np;[ -z "$np" ]&&return
+        1) printf "新密码: ";read -r np;if [ -z "$np" ]; then return;fi
            sed -i "s/^ADMIN_PASS=.*/ADMIN_PASS=$np/" "$MGR_DIR/.env"
            pm2 restart $MGR_PM2 2>/dev/null;echo -e "${GREEN}✅ 密码已修改${NC}" ;;
-        2) printf "新端口: ";read -r np;[[ ! "$np" =~ ^[0-9]+$ ]]&&return
+        2) printf "新端口: ";read -r np;if [[ ! "$np" =~ ^[0-9]+$ ]]; then return;fi
            sed -i "s/^PORT=.*/PORT=$np/" "$MGR_DIR/.env"
            pm2 restart $MGR_PM2 2>/dev/null;echo -e "${GREEN}✅ 端口已改为 $np${NC}" ;;
     esac
@@ -1014,7 +1014,7 @@ do_modify(){
 do_uninstall(){
     echo -e "${YELLOW}卸载管理面板${NC}"
     echo -e "  ${GREEN}注意: 卸载管理面板不会影响已部署的聊天室${NC}"
-    printf "确认卸载? (y/n): ";read -r c;[ "$c" != "y" ]&&return
+    printf "确认卸载? (y/n): ";read -r c;if [ "$c" != "y" ]; then return;fi
     pm2 stop $MGR_PM2 2>/dev/null||true
     pm2 delete $MGR_PM2 2>/dev/null||true
     pm2 save 2>/dev/null||true
