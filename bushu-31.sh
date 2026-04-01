@@ -2462,10 +2462,11 @@ db.close();
 }
 
 setup_service() {
-    echo -e "\n${YELLOW}阶段 6/6: 配置并启动服务...${NC}"
-    pm2 stop teamchat > /dev/null 2>&1 || true
-    pm2 delete teamchat > /dev/null 2>&1 || true
-    cd "$APP_DIR"; PORT=$PORT pm2 start server.js --name teamchat; pm2 save
+    local pm2name="${1:-teamchat}"
+    echo -e "\n${YELLOW}阶段 6/6: 配置并启动服务 ($pm2name)...${NC}"
+    pm2 stop "$pm2name" > /dev/null 2>&1 || true
+    pm2 delete "$pm2name" > /dev/null 2>&1 || true
+    cd "$APP_DIR"; PORT=$PORT pm2 start server.js --name "$pm2name"; pm2 save
     pm2 startup systemd -u root --hp /root > /dev/null 2>&1 || pm2 startup > /dev/null 2>&1 || true
     pm2 save
     echo -e "${GREEN}✅ 服务配置完成${NC}"
@@ -2663,21 +2664,48 @@ do_multi_instance() {
     echo -e "\n${YELLOW}========== 多实例管理 ==========${NC}"
     list_instances
     echo -e "  ${GREEN}1${NC}. 部署新实例"
-    echo -e "  ${GREEN}2${NC}. 启动/重启指定实例"
-    echo -e "  ${GREEN}3${NC}. 停止指定实例"
-    echo -e "  ${GREEN}4${NC}. 查看指定实例日志"
-    echo -e "  ${GREEN}5${NC}. 删除指定实例"
+    echo -e "  ${GREEN}2${NC}. 更新指定实例"
+    echo -e "  ${GREEN}3${NC}. 启动/重启指定实例"
+    echo -e "  ${GREEN}4${NC}. 停止指定实例"
+    echo -e "  ${GREEN}5${NC}. 查看指定实例日志"
+    echo -e "  ${GREEN}6${NC}. 删除指定实例"
     echo -e "  ${GREEN}0${NC}. 返回主菜单"
     printf "请选择: "; read -r mi_choice
     case $mi_choice in
         1) do_new_instance ;;
-        2) do_instance_action "restart" ;;
-        3) do_instance_action "stop" ;;
-        4) do_instance_action "logs" ;;
-        5) do_instance_action "delete" ;;
+        2) do_update_selected_instance ;;
+        3) do_instance_action "restart" ;;
+        4) do_instance_action "stop" ;;
+        5) do_instance_action "logs" ;;
+        6) do_instance_action "delete" ;;
         0) return ;;
         *) echo -e "${RED}无效${NC}" ;;
     esac
+}
+
+do_update_selected_instance() {
+    echo ""
+    select_instance "更新" || return
+    echo ""
+    echo -e "${CYAN}  → 将更新实例: ${SELECTED_PM2NAME}${NC}"
+    echo -e "${CYAN}  → 路径: ${SELECTED_DIR}${NC}"
+    printf "确认更新? (y/n): "; read -r confirm; [ "$confirm" != "y" ] && { echo "已取消"; return 0; }
+
+    local ORIG_APP_DIR="$APP_DIR"
+    APP_DIR="$SELECTED_DIR"
+    PORT=$(grep -oP 'const PORT = process\.env\.PORT \|\| \K\d+' "$APP_DIR/server.js" 2>/dev/null || echo "3000")
+
+    detect_os; install_dependencies; install_nodejs; write_app_files; install_npm_deps; update_database
+    setup_service "$SELECTED_PM2NAME"
+    APP_DIR="$ORIG_APP_DIR"
+
+    echo ""
+    echo -e "${GREEN}================================================${NC}"
+    echo -e "${GREEN}  🎉 实例 ${SELECTED_PM2NAME} 更新完成！${NC}"
+    echo -e "${GREEN}  ✅ 所有用户数据、聊天记录和设置已保留${NC}"
+    echo -e "${GREEN}================================================${NC}"
+    echo -e "${YELLOW}建议用户清除浏览器缓存以获取最新界面${NC}"
+    echo ""
 }
 
 do_new_instance() {
@@ -3024,20 +3052,58 @@ db.close();
 do_install() {
     print_header
 
-    # 检测现有安装
-    local IS_UPDATE="false"
+    # ===== 扫描所有已有实例 =====
+    local all_instances=()
+    local inst_idx=0
+
+    # 默认实例
     if [ -f "$APP_DIR/database.sqlite" ] && [ -f "$APP_DIR/server.js" ]; then
-        local current_admin current_port
-        current_admin=$(get_admin_username)
-        current_port=$(get_current_port)
+        local dport dadmin
+        dport=$(grep -oP 'const PORT = process\.env\.PORT \|\| \K\d+' "$APP_DIR/server.js" 2>/dev/null || echo "3000")
+        dadmin=$(cd "$APP_DIR" && node -e "const D=require('better-sqlite3');try{const d=new D('database.sqlite');const u=d.prepare('SELECT username FROM users WHERE is_admin=1 LIMIT 1').get();if(u)process.stdout.write(u.username)}catch(e){}" 2>/dev/null || echo "admin")
+        all_instances+=("teamchat|$APP_DIR|$dport|$dadmin|teamchat.conf")
+        inst_idx=$((inst_idx+1))
+    fi
+    # 多实例
+    for dir in "$INSTANCES_DIR"/${INSTANCES_PREFIX}-*; do
+        [ -d "$dir" ] || continue
+        [ -f "$dir/server.js" ] || continue
+        local iname=$(basename "$dir")
+        local iport iadmin
+        iport=$(grep -oP 'const PORT = process\.env\.PORT \|\| \K\d+' "$dir/server.js" 2>/dev/null || echo "?")
+        iadmin=$(cd "$dir" && node -e "const D=require('better-sqlite3');try{const d=new D('database.sqlite');const u=d.prepare('SELECT username FROM users WHERE is_admin=1 LIMIT 1').get();if(u)process.stdout.write(u.username)}catch(e){}" 2>/dev/null || echo "?")
+        all_instances+=("$iname|$dir|$iport|$iadmin|${iname}.conf")
+        inst_idx=$((inst_idx+1))
+    done
+
+    local IS_UPDATE="false"
+    local UPDATE_PM2NAME="teamchat"
+    local UPDATE_DIR="$APP_DIR"
+    local UPDATE_NGINX_CONF="teamchat.conf"
+
+    if [ "$inst_idx" -gt 0 ]; then
         echo ""
         echo -e "${GREEN}================================================${NC}"
-        echo -e "${GREEN}  ✅ 检测到已有安装${NC}"
-        echo -e "${GREEN}  管理员: ${current_admin} | 端口: ${current_port}${NC}"
+        echo -e "${GREEN}  ✅ 检测到已有实例 (共 ${inst_idx} 个)${NC}"
         echo -e "${GREEN}================================================${NC}"
         echo ""
-        echo -e "  ${GREEN}1${NC}. 更新程序 (保留所有数据、用户和设置)"
-        echo -e "  ${GREEN}2${NC}. 全新安装 (可重新设置管理员和端口)"
+        local i=0
+        for entry in "${all_instances[@]}"; do
+            i=$((i+1))
+            local ename eport eadmin
+            ename="${entry%%|*}"
+            eport=$(echo "$entry" | cut -d'|' -f3)
+            eadmin=$(echo "$entry" | cut -d'|' -f4)
+            if [ "$ename" = "teamchat" ]; then
+                echo -e "  ${GREEN}${i}${NC}. 更新 ${CYAN}$ename (默认)${NC}  端口:$eport  管理员:$eadmin"
+            else
+                echo -e "  ${GREEN}${i}${NC}. 更新 ${CYAN}$ename${NC}  端口:$eport  管理员:$eadmin"
+            fi
+        done
+        if [ "$inst_idx" -gt 1 ]; then
+            echo -e "  ${GREEN}A${NC}. 更新全部实例"
+        fi
+        echo -e "  ${GREEN}N${NC}. 全新安装 (新建默认实例)"
         echo -e "  ${GREEN}0${NC}. 返回主菜单"
         echo ""
         printf "请选择 [1]: "; read -r install_mode
@@ -3045,25 +3111,92 @@ do_install() {
 
         case $install_mode in
             0) return 0 ;;
-            2) IS_UPDATE="false" ;;
-            *) IS_UPDATE="true" ;;
+            [Nn]) IS_UPDATE="false" ;;
+            [Aa])
+                # 更新全部实例
+                echo ""
+                echo -e "${CYAN}将更新全部 ${inst_idx} 个实例...${NC}"
+                detect_os; install_dependencies; install_nodejs
+                local ORIG_APP_DIR="$APP_DIR"
+                for entry in "${all_instances[@]}"; do
+                    local ename edir eport eadmin enginx
+                    ename=$(echo "$entry" | cut -d'|' -f1)
+                    edir=$(echo "$entry" | cut -d'|' -f2)
+                    eport=$(echo "$entry" | cut -d'|' -f3)
+                    eadmin=$(echo "$entry" | cut -d'|' -f4)
+                    enginx=$(echo "$entry" | cut -d'|' -f5)
+                    echo ""
+                    echo -e "${YELLOW}━━━ 正在更新 $ename (端口:$eport) ━━━${NC}"
+                    APP_DIR="$edir"
+                    PORT="$eport"
+                    write_app_files; install_npm_deps; update_database
+                    setup_service "$ename"
+                    echo -e "${GREEN}✅ $ename 更新完成${NC}"
+                done
+                APP_DIR="$ORIG_APP_DIR"
+                echo ""
+                echo -e "${GREEN}================================================${NC}"
+                echo -e "${GREEN}  🎉 全部 ${inst_idx} 个实例已更新！${NC}"
+                echo -e "${GREEN}  ✅ 所有用户数据、聊天记录和设置已保留${NC}"
+                echo -e "${GREEN}================================================${NC}"
+                echo ""
+                echo -e "${YELLOW}更新提示: 建议用户清除浏览器缓存以获取最新界面${NC}"
+                echo ""
+                return 0
+                ;;
+            *)
+                # 更新指定实例
+                if [[ "$install_mode" =~ ^[0-9]+$ ]] && [ "$install_mode" -ge 1 ] && [ "$install_mode" -le "$inst_idx" ]; then
+                    local sel_entry="${all_instances[$((install_mode-1))]}"
+                    UPDATE_PM2NAME=$(echo "$sel_entry" | cut -d'|' -f1)
+                    UPDATE_DIR=$(echo "$sel_entry" | cut -d'|' -f2)
+                    UPDATE_NGINX_CONF=$(echo "$sel_entry" | cut -d'|' -f5)
+                    IS_UPDATE="true"
+                else
+                    echo -e "${RED}无效选择${NC}"; return 0
+                fi
+                ;;
         esac
     fi
 
+    if [ "$IS_UPDATE" = "true" ]; then
+        # 临时切换到目标实例目录
+        local ORIG_APP_DIR="$APP_DIR"
+        APP_DIR="$UPDATE_DIR"
+        PORT=$(grep -oP 'const PORT = process\.env\.PORT \|\| \K\d+' "$APP_DIR/server.js" 2>/dev/null || echo "3000")
+        ADMIN_USER=$(cd "$APP_DIR" && node -e "const D=require('better-sqlite3');try{const d=new D('database.sqlite');const u=d.prepare('SELECT username FROM users WHERE is_admin=1 LIMIT 1').get();if(u)process.stdout.write(u.username)}catch(e){}" 2>/dev/null || echo "admin")
+
+        echo ""
+        echo -e "${CYAN}  → 更新实例: ${UPDATE_PM2NAME}${NC}"
+        echo -e "${CYAN}  → 保留端口 ${PORT}、管理员 ${ADMIN_USER} 及所有数据${NC}"
+        echo ""
+        echo "==========================================="
+        echo "  模式: 🔄 更新 $UPDATE_PM2NAME | 端口: $PORT | 管理员: $ADMIN_USER"
+        echo "==========================================="
+        printf "确认更新? (y/n): "; read -r confirm; [ "$confirm" != "y" ] && { APP_DIR="$ORIG_APP_DIR"; echo "已取消"; return 0; }
+
+        detect_os; install_dependencies; install_nodejs; write_app_files; install_npm_deps; update_database
+        setup_service "$UPDATE_PM2NAME"
+        APP_DIR="$ORIG_APP_DIR"
+
+        echo ""
+        echo -e "${GREEN}================================================${NC}"
+        echo -e "${GREEN}  🎉 实例 ${UPDATE_PM2NAME} 更新完成！${NC}"
+        echo -e "${GREEN}  ✅ 所有用户数据、聊天记录和设置已保留${NC}"
+        echo -e "${GREEN}================================================${NC}"
+        echo ""
+        echo -e "${YELLOW}更新提示: 建议用户清除浏览器缓存以获取最新界面${NC}"
+        echo ""
+        return 0
+    fi
+
+    # ===== 全新安装流程 =====
     DOMAIN=$(show_ip_menu)
 
-    if [ "$IS_UPDATE" = "true" ]; then
-        PORT=$(get_current_port)
-        ADMIN_USER=$(get_admin_username)
-        ADMIN_PASS="(已保留)"
-        echo ""
-        echo -e "${CYAN}  → 更新模式: 保留现有端口 ${PORT}、管理员 ${ADMIN_USER} 及所有数据${NC}"
-    else
-        echo ""; echo -e "请配置以下参数:"
-        while true; do printf "  管理员用户名 [admin]: "; read -r input; ADMIN_USER=${input:-admin}; validate_input "$ADMIN_USER" "用户名" && break; done
-        while true; do printf "  管理员密码 [admin123]: "; read -r input; ADMIN_PASS=${input:-admin123}; [ ${#ADMIN_PASS} -ge 6 ] && break; echo -e "${RED}密码不能小于6位${NC}"; done
-        while true; do printf "  服务端口 [3000]: "; read -r input; PORT=${input:-3000}; [[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] && break; echo -e "${RED}端口无效${NC}"; done
-    fi
+    echo ""; echo -e "请配置以下参数:"
+    while true; do printf "  管理员用户名 [admin]: "; read -r input; ADMIN_USER=${input:-admin}; validate_input "$ADMIN_USER" "用户名" && break; done
+    while true; do printf "  管理员密码 [admin123]: "; read -r input; ADMIN_PASS=${input:-admin123}; [ ${#ADMIN_PASS} -ge 6 ] && break; echo -e "${RED}密码不能小于6位${NC}"; done
+    while true; do printf "  服务端口 [3000]: "; read -r input; PORT=${input:-3000}; [[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] && break; echo -e "${RED}端口无效${NC}"; done
 
     # 检测现有 SSL 配置
     local existing_ssl_domain="" use_ssl="" domain=""
@@ -3091,42 +3224,22 @@ do_install() {
 
     echo ""
     echo "==========================================="
-    if [ "$IS_UPDATE" = "true" ]; then
-        echo "  模式: 🔄 更新程序 | 端口: $PORT | 管理员: $ADMIN_USER"
-    else
-        echo "  模式: 🆕 全新安装 | 端口: $PORT | 管理员: $ADMIN_USER"
-    fi
+    echo "  模式: 🆕 全新安装 | 端口: $PORT | 管理员: $ADMIN_USER"
     echo "  域名/IP: $domain | HTTPS: $([ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ] && echo 是 || echo 否)"
     echo "==========================================="
     printf "确认部署? (y/n): "; read -r confirm; [ "$confirm" != "y" ] && { echo "已取消"; return 0; }
 
-    detect_os; install_dependencies; install_nodejs; write_app_files; install_npm_deps
-
-    if [ "$IS_UPDATE" = "true" ]; then
-        update_database
-    else
-        init_database
-    fi
-
-    setup_service
+    detect_os; install_dependencies; install_nodejs; write_app_files; install_npm_deps; init_database
+    setup_service "teamchat"
     if [ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ]; then generate_nginx_config "$domain" "yes"; else generate_nginx_config "$domain" "no"; fi
 
     echo ""
     echo -e "${GREEN}================================================${NC}"
-    if [ "$IS_UPDATE" = "true" ]; then
-        echo -e "${GREEN}  🎉 更新完成！${NC}"
-    else
-        echo -e "${GREEN}  🎉 部署完成！${NC}"
-    fi
+    echo -e "${GREEN}  🎉 部署完成！${NC}"
     echo -e "${GREEN}================================================${NC}"
     if [ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ]; then echo -e "  访问: https://${domain}";
     else echo -e "  访问: http://${domain}:${PORT}"; fi
-    if [ "$IS_UPDATE" = "true" ]; then
-        echo -e "  管理员: $ADMIN_USER (密码未变更)"
-        echo -e "  ${CYAN}✅ 所有用户数据、聊天记录和设置已保留${NC}"
-    else
-        echo -e "  管理员: $ADMIN_USER / $ADMIN_PASS"
-    fi
+    echo -e "  管理员: $ADMIN_USER / $ADMIN_PASS"
     echo -e "${GREEN}================================================${NC}"
     echo ""
     echo -e "${YELLOW}📱 推送通知说明:${NC}"
@@ -3134,11 +3247,7 @@ do_install() {
     echo "  - iOS Safari (16.4+): 先点'分享'→'添加到主屏幕'→从主屏图标打开→设置→开启推送"
     echo "  - iOS 需要 16.4 或更高版本才支持 PWA 推送"
     echo "  - 推送需要 HTTPS（已配置 SSL）或 localhost"
-    if [ "$IS_UPDATE" = "true" ]; then
-        echo "  - 更新提示: 建议用户清除浏览器缓存以获取最新界面"
-    else
-        echo "  - 升级提示: 如从旧版升级，请在设置中先关闭再重新开启推送通知"
-    fi
+    echo "  - 升级提示: 如从旧版升级，请在设置中先关闭再重新开启推送通知"
     echo ""
 }
 
