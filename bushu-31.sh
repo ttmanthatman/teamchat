@@ -1,7 +1,7 @@
 #!/bin/bash
 #===============================================================================
-# TeamChat 一键部署脚本 (全功能增强版 v8.2)
-# 变更: 新增登录页背景定制(渐变/纯色/图片)，含实时预览
+# TeamChat 一键部署脚本 (全功能增强版 v8.0)
+# 变更: 修复手机端发送按钮，增加换行按钮，新增多实例部署
 #===============================================================================
 
 set -e
@@ -20,7 +20,7 @@ APP_DIR="/var/www/teamchat"
 
 print_header() {
     echo -e "\n${CYAN}================================================${NC}"
-    echo -e "${CYAN}  TeamChat 一键部署脚本 v8.2${NC}"
+    echo -e "${CYAN}  TeamChat 一键部署脚本 v8.0${NC}"
     echo -e "${CYAN}================================================${NC}\n"
 }
 
@@ -28,7 +28,7 @@ print_menu() {
     echo -e "${BLUE}================================================${NC}"
     echo -e "${BLUE}  请选择操作:${NC}"
     echo -e "${BLUE}================================================${NC}"
-    echo -e "  ${GREEN}1${NC}. 安装/更新程序"
+    echo -e "  ${GREEN}1${NC}. 安装/修复 (保留数据)"
     echo -e "  ${GREEN}2${NC}. 启动/重启服务"
     echo -e "  ${GREEN}3${NC}. 停止服务"
     echo -e "  ${GREEN}4${NC}. 查看运行日志"
@@ -328,7 +328,7 @@ console.log("✅ 已生成 96x96 通知图标");
 // TeamChat Service Worker - PWA + 推送通知 (iOS/Android 双平台兼容)
 
 // 缓存版本号 - 更新文件时递增
-var CACHE_NAME = "teamchat-v4";
+var CACHE_NAME = "teamchat-v2";
 var OFFLINE_URLS = ["/", "/index.html", "/style.css", "/app.js", "/images/icon-192.png", "/images/icon-96.png", "/images/default-avatar.svg"];
 
 // ===== 安装: 预缓存关键资源 (iOS 需要缓存才能正确识别 PWA) =====
@@ -480,15 +480,7 @@ SWEOF
         <input type="password" id="loginPassword" placeholder="密码" required>
         <button type="submit">登录</button>
       </form>
-      <form id="registerForm" class="hidden">
-        <input type="text" id="regUsername" placeholder="用户名 (字母数字下划线)" required>
-        <input type="text" id="regNickname" placeholder="昵称 (选填)">
-        <input type="password" id="regPassword" placeholder="密码 (至少6位)" required>
-        <input type="password" id="regPassword2" placeholder="确认密码" required>
-        <button type="submit">注册</button>
-      </form>
       <p id="loginError" class="error"></p>
-      <p id="regToggle" class="reg-toggle hidden"><a href="#" id="toggleRegLink">还没有账号？注册一个</a></p>
     </div>
   </div>
 
@@ -584,7 +576,6 @@ SWEOF
         <button onclick="showNoticeAdmin()" class="admin-btn">📌 置顶通知</button>
         <button onclick="showAppearance()" class="admin-btn">🎨 外观定制</button>
         <button onclick="showUserManagement()" class="admin-btn">👥 用户管理</button>
-        <button onclick="toggleRegistration()" class="admin-btn" id="regToggleBtn">📝 开放注册</button>
         <button onclick="showBackup()" class="admin-btn">💾 备份/还原</button>
         <button onclick="showDeleteMessages()" class="admin-btn danger">🗑️ 删除记录</button>
       </div>
@@ -626,56 +617,6 @@ SWEOF
         <div class="color-row">
           <input type="color" id="appSendColor" value="#667eea">
           <span id="appSendColorHex" class="color-hex">#667eea</span>
-        </div>
-      </div>
-      <div class="settings-section">
-        <h4>登录页背景</h4>
-        <label class="field-label">背景类型</label>
-        <div class="radio-group">
-          <label><input type="radio" name="loginBgType" value="gradient" checked onchange="toggleLoginBgType()"> 渐变</label>
-          <label><input type="radio" name="loginBgType" value="color" onchange="toggleLoginBgType()"> 纯色</label>
-          <label><input type="radio" name="loginBgType" value="image" onchange="toggleLoginBgType()"> 图片</label>
-        </div>
-        <div id="loginBgGradientSection">
-          <label class="field-label">渐变色 1</label>
-          <div class="color-row">
-            <input type="color" id="appLoginBgColor1" value="#667eea">
-            <span id="appLoginBgColor1Hex" class="color-hex">#667eea</span>
-          </div>
-          <label class="field-label">渐变色 2</label>
-          <div class="color-row">
-            <input type="color" id="appLoginBgColor2" value="#764ba2">
-            <span id="appLoginBgColor2Hex" class="color-hex">#764ba2</span>
-          </div>
-        </div>
-        <div id="loginBgColorSection" class="hidden">
-          <label class="field-label">背景颜色</label>
-          <div class="color-row">
-            <input type="color" id="appLoginBgSolid" value="#667eea">
-            <span id="appLoginBgSolidHex" class="color-hex">#667eea</span>
-          </div>
-        </div>
-        <div id="loginBgImageSection" class="hidden">
-          <label class="field-label">背景图片</label>
-          <div class="bg-preview-area">
-            <img id="loginBgPreview" src="" alt="预览" class="bg-preview hidden">
-            <span id="loginBgFileName" class="bg-filename">未选择图片</span>
-          </div>
-          <input type="file" id="loginBgImageInput" accept="image/*" style="display:none" onchange="handleLoginBgUpload(this)">
-          <button onclick="document.getElementById('loginBgImageInput').click()" class="admin-btn" style="margin-top:8px">选择图片</button>
-          <label class="field-label" style="margin-top:12px">显示方式</label>
-          <select id="appLoginBgMode">
-            <option value="cover">填充 (cover)</option>
-            <option value="contain">适应 (contain)</option>
-            <option value="stretch">拉伸 (stretch)</option>
-            <option value="tile">平铺 (tile)</option>
-          </select>
-        </div>
-        <div id="loginBgLivePreview" class="live-preview" style="margin-top:12px">
-          <div class="preview-label">登录页预览</div>
-          <div id="loginPreviewArea" style="border-radius:8px;padding:20px;min-height:80px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)">
-            <div style="background:#fff;padding:16px 24px;border-radius:12px;box-shadow:0 4px 16px rgba(0,0,0,.15);text-align:center;font-size:14px;color:#333">登录预览</div>
-          </div>
         </div>
       </div>
       <div class="settings-section">
@@ -754,14 +695,6 @@ SWEOF
         <button onclick="addUser()">添加用户</button>
       </div>
       <div id="userList" class="user-list"></div>
-      <div id="resetPwdSection" class="settings-section hidden" style="margin-top:16px">
-        <h4>🔑 重置用户密码</h4>
-        <p id="resetPwdTarget" style="font-size:13px;color:#666;margin-bottom:8px"></p>
-        <input type="password" id="resetPwdInput" placeholder="新密码 (至少6位)">
-        <button onclick="doResetPassword()">确认重置</button>
-        <button onclick="cancelResetPassword()" class="close-btn" style="margin-top:4px">取消</button>
-        <p id="resetPwdMsg" style="font-size:13px;margin-top:8px"></p>
-      </div>
       <div class="settings-section" style="margin-top:16px">
         <h4>批量导入/导出用户</h4>
         <button onclick="exportUsers()" class="admin-btn">📤 导出用户数据</button>
@@ -838,12 +771,11 @@ html{touch-action:manipulation;-webkit-text-size-adjust:100%;text-size-adjust:10
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f5f5f5;height:100vh;overflow:hidden;-webkit-overflow-scrolling:touch}
 .page{width:100%;height:100vh;display:flex;flex-direction:column}
 .hidden{display:none!important}
-#loginPage{justify-content:center;align-items:center;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);background-size:cover;background-position:center;background-repeat:no-repeat}
+#loginPage{justify-content:center;align-items:center;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%)}
 .login-card{background:#fff;padding:40px;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.2);width:90%;max-width:400px}
 .login-card h1{text-align:center;margin-bottom:30px;color:#333}
 .login-card input{width:100%;padding:14px;margin-bottom:16px;border:1px solid #ddd;border-radius:8px;font-size:16px}
 .login-card button{width:100%;padding:14px;background:#667eea;color:#fff;border:none;border-radius:8px;font-size:16px;cursor:pointer;margin-bottom:10px}
-.reg-toggle{text-align:center;margin-top:12px;font-size:14px}.reg-toggle a{color:#667eea;text-decoration:none}.reg-toggle a:hover{text-decoration:underline}
 .error{color:#dc2626;text-align:center;margin-top:10px;font-size:14px}
 #chatPage{background:#f5f5f5}
 .chat-header{background:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 2px 8px rgba(0,0,0,.1);flex-shrink:0}
@@ -956,7 +888,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .user-item{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#f9f9f9;border-radius:8px;margin-bottom:8px}
 .user-item .username{font-weight:600}.user-item .nickname{font-size:12px;color:#666}
 .user-item .delete-btn{background:#dc2626;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px}
-.user-item .reset-pwd-btn{background:#f59e0b;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;font-size:12px}
 .avatar-upload{display:flex;flex-direction:column;align-items:center;gap:10px}
 .avatar-preview{width:80px;height:80px;border-radius:50%;object-fit:cover;border:2px solid #ddd}
 #avatarInput{display:none}
@@ -1418,17 +1349,6 @@ function applyAppearance(d){
   }else if(d.bg_type==='image'&&d.bg_image){
     applyBgToElement(msgEl,'image',d.bg_color,API_BASE+'/backgrounds/'+encodeURIComponent(d.bg_image),d.bg_mode);
   }else{applyBgToElement(msgEl,'color',d.bg_color||'#f5f5f5','','')}
-  // 登录页背景
-  var lp=document.getElementById('loginPage');
-  var lbt=d.login_bg_type||'gradient';
-  if(lbt==='image'&&d.login_bg_image){
-    lp.style.background='none';
-    applyBgToElement(lp,'image',d.login_bg_color1||'#667eea',API_BASE+'/backgrounds/'+encodeURIComponent(d.login_bg_image),d.login_bg_mode||'cover');
-  }else if(lbt==='color'){
-    lp.style.backgroundImage='none';lp.style.backgroundColor=d.login_bg_color1||'#667eea';
-  }else{
-    lp.style.backgroundImage='linear-gradient(135deg,'+(d.login_bg_color1||'#667eea')+' 0%,'+(d.login_bg_color2||'#764ba2')+' 100%)';
-  }
   if(d.timezone){chatTimezone=d.timezone;var sel=document.getElementById('timezoneSelect');if(sel)sel.value=chatTimezone;updateTzIndicator()}
 }
 
@@ -1500,39 +1420,6 @@ document.getElementById('loginForm').addEventListener('submit',async(e)=>{
   }catch(err){document.getElementById('loginError').textContent='登录失败，请重试'}
 });
 
-// ===== 注册功能 =====
-let regOpen=false;
-async function checkRegistration(){
-  try{const r=await fetch(API_BASE+'/api/settings/registration');const d=await r.json();regOpen=d.open;
-    document.getElementById('regToggle').classList.toggle('hidden',!regOpen);
-  }catch(e){}
-}
-checkRegistration();
-
-document.getElementById('toggleRegLink').addEventListener('click',(e)=>{
-  e.preventDefault();const lf=document.getElementById('loginForm'),rf=document.getElementById('registerForm'),el=document.getElementById('loginError');
-  el.textContent='';
-  if(rf.classList.contains('hidden')){lf.classList.add('hidden');rf.classList.remove('hidden');e.target.textContent='已有账号？去登录'}
-  else{rf.classList.add('hidden');lf.classList.remove('hidden');e.target.textContent='还没有账号？注册一个'}
-});
-
-document.getElementById('registerForm').addEventListener('submit',async(e)=>{
-  e.preventDefault();const el=document.getElementById('loginError');el.textContent='';
-  const u=document.getElementById('regUsername').value.trim(),n=document.getElementById('regNickname').value.trim(),
-    p=document.getElementById('regPassword').value,p2=document.getElementById('regPassword2').value;
-  if(!u||!p)return el.textContent='请填写用户名和密码';
-  if(p!==p2)return el.textContent='两次密码不一致';
-  if(p.length<6)return el.textContent='密码至少6个字符';
-  try{const r=await fetch(API_BASE+'/api/public-register',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:p,nickname:n||u})});
-    const d=await r.json();
-    if(d.success){el.style.color='#10b981';el.textContent='注册成功！请登录';
-      document.getElementById('registerForm').classList.add('hidden');document.getElementById('loginForm').classList.remove('hidden');
-      document.getElementById('loginUsername').value=u;document.getElementById('toggleRegLink').textContent='还没有账号？注册一个';
-      setTimeout(()=>{el.style.color='';el.textContent=''},3000);
-    }else{el.textContent=d.message||'注册失败'}
-  }catch(err){el.textContent='注册失败，请重试'}
-});
-
 function getAvatarUrl(a){return a?API_BASE+'/avatars/'+encodeURIComponent(a):API_BASE+'/images/default-avatar.svg'}
 
 function initChat(){
@@ -1543,7 +1430,6 @@ function initChat(){
   if(currentUser.isAdmin)document.getElementById('adminSection').classList.remove('hidden');
   loadTimezone();
   loadNotice();
-  if(currentUser.isAdmin)loadRegStatus();
   detectPushSupport();
 
   socket=io({auth:{token:currentUser.token}});
@@ -1556,7 +1442,6 @@ function initChat(){
   socket.on('kicked',(d)=>showKickedOverlay(d.message||'您的账号已在其他设备登录'));
   socket.on('timezoneChanged',(d)=>{if(d.timezone){chatTimezone=d.timezone;const s=document.getElementById('timezoneSelect');if(s)s.value=chatTimezone;updateTzIndicator();refreshMessageTimes()}});
   socket.on('appearanceChanged',(d)=>{appearanceData=d;applyAppearance(d)});
-  socket.on('registrationChanged',(d)=>{regOpen=d.open;if(currentUser.isAdmin)updateRegBtn(d.open)});
   socket.on('noticeChanged',(d)=>{applyNotice(d)});
   socket.on('chainUpdated',(data)=>{
     // 更新本地缓存中的消息内容并重新渲染该消息气泡
@@ -1780,21 +1665,13 @@ function showAppearance(){
   document.getElementById('appBgVideoMode').value=d.bg_video_mode||'cover';
   if(d.bg_video){pendingBgVideoFilename=d.bg_video;document.getElementById('bgVideoFileName').textContent=d.bg_video}
   else{pendingBgVideoFilename='';document.getElementById('bgVideoFileName').textContent='未选择视频'}
-  // 登录页背景
-  document.getElementById('appLoginBgColor1').value=d.login_bg_color1||'#667eea';document.getElementById('appLoginBgColor1Hex').textContent=d.login_bg_color1||'#667eea';
-  document.getElementById('appLoginBgColor2').value=d.login_bg_color2||'#764ba2';document.getElementById('appLoginBgColor2Hex').textContent=d.login_bg_color2||'#764ba2';
-  document.getElementById('appLoginBgSolid').value=d.login_bg_color1||'#667eea';document.getElementById('appLoginBgSolidHex').textContent=d.login_bg_color1||'#667eea';
-  document.querySelectorAll('input[name="loginBgType"]').forEach(function(r){r.checked=(r.value===(d.login_bg_type||'gradient'))});toggleLoginBgType();
-  if(d.login_bg_image){pendingLoginBgFilename=d.login_bg_image;document.getElementById('loginBgFileName').textContent=d.login_bg_image;var lp=document.getElementById('loginBgPreview');lp.src=API_BASE+'/backgrounds/'+encodeURIComponent(d.login_bg_image);lp.classList.remove('hidden')}
-  else{pendingLoginBgFilename='';document.getElementById('loginBgFileName').textContent='未选择图片';document.getElementById('loginBgPreview').classList.add('hidden')}
-  document.getElementById('appLoginBgMode').value=d.login_bg_mode||'cover';
-  updateLivePreview();updateLoginPreview();
+  updateLivePreview();
   document.getElementById('appearanceModal').classList.remove('hidden');
 }
 function closeAppearance(){document.getElementById('appearanceModal').classList.add('hidden')}
 function toggleBgType(){var v=document.querySelector('input[name="bgType"]:checked').value;document.getElementById('bgColorSection').classList.toggle('hidden',v!=='color');document.getElementById('bgImageSection').classList.toggle('hidden',v!=='image');document.getElementById('bgVideoSection').classList.toggle('hidden',v!=='video');updateLivePreview()}
-document.addEventListener('input',function(e){if(e.target.id==='appSendColor'){document.getElementById('appSendColorHex').textContent=e.target.value;updateLivePreview()}if(e.target.id==='appBgColor'){document.getElementById('appBgColorHex').textContent=e.target.value;updateLivePreview()}if(e.target.id==='appLoginBgColor1'){document.getElementById('appLoginBgColor1Hex').textContent=e.target.value;updateLoginPreview()}if(e.target.id==='appLoginBgColor2'){document.getElementById('appLoginBgColor2Hex').textContent=e.target.value;updateLoginPreview()}if(e.target.id==='appLoginBgSolid'){document.getElementById('appLoginBgSolidHex').textContent=e.target.value;updateLoginPreview()}});
-document.addEventListener('change',function(e){if(e.target.id==='appBgMode'||e.target.id==='appBgVideoMode')updateLivePreview();if(e.target.id==='appLoginBgMode')updateLoginPreview()});
+document.addEventListener('input',function(e){if(e.target.id==='appSendColor'){document.getElementById('appSendColorHex').textContent=e.target.value;updateLivePreview()}if(e.target.id==='appBgColor'){document.getElementById('appBgColorHex').textContent=e.target.value;updateLivePreview()}});
+document.addEventListener('change',function(e){if(e.target.id==='appBgMode'||e.target.id==='appBgVideoMode')updateLivePreview()});
 function updateLivePreview(){
   var p=document.getElementById('previewArea');if(!p)return;
   clearVideoBg(p);
@@ -1825,38 +1702,11 @@ async function handleBgVideoUpload(input){
 }
 async function saveAppearance(){
   var m=document.getElementById('appearanceMsg');var bt=document.querySelector('input[name="bgType"]:checked').value;
-  var lbt=document.querySelector('input[name="loginBgType"]:checked').value;
   var videoUrl=document.getElementById('appBgVideoUrl');videoUrl=videoUrl?videoUrl.value.trim():'';
-  var loginColor1=lbt==='color'?(document.getElementById('appLoginBgSolid').value||'#667eea'):(document.getElementById('appLoginBgColor1').value||'#667eea');
-  var loginColor2=document.getElementById('appLoginBgColor2').value||'#764ba2';
-  var payload={login_title:document.getElementById('appLoginTitle').value.trim()||'团队聊天室',chat_title:document.getElementById('appChatTitle').value.trim()||'团队聊天',send_text:document.getElementById('appSendText').value.trim()||'发送',send_color:document.getElementById('appSendColor').value||'#667eea',bg_type:bt,bg_color:document.getElementById('appBgColor').value||'#f5f5f5',bg_image:bt==='image'?pendingBgFilename:'',bg_mode:document.getElementById('appBgMode').value||'cover',bg_video:bt==='video'?pendingBgVideoFilename:'',bg_video_url:bt==='video'?videoUrl:'',bg_video_mode:bt==='video'?(document.getElementById('appBgVideoMode').value||'cover'):'cover',login_bg_type:lbt,login_bg_color1:loginColor1,login_bg_color2:loginColor2,login_bg_image:lbt==='image'?pendingLoginBgFilename:'',login_bg_mode:document.getElementById('appLoginBgMode').value||'cover'};
+  var payload={login_title:document.getElementById('appLoginTitle').value.trim()||'团队聊天室',chat_title:document.getElementById('appChatTitle').value.trim()||'团队聊天',send_text:document.getElementById('appSendText').value.trim()||'发送',send_color:document.getElementById('appSendColor').value||'#667eea',bg_type:bt,bg_color:document.getElementById('appBgColor').value||'#f5f5f5',bg_image:bt==='image'?pendingBgFilename:'',bg_mode:document.getElementById('appBgMode').value||'cover',bg_video:bt==='video'?pendingBgVideoFilename:'',bg_video_url:bt==='video'?videoUrl:'',bg_video_mode:bt==='video'?(document.getElementById('appBgVideoMode').value||'cover'):'cover'};
   if(bt==='video'&&videoUrl&&!extractYoutubeId(videoUrl)&&!pendingBgVideoFilename){m.textContent='YouTube 链接格式不正确';m.style.color='#dc2626';return}
   if(bt==='video'&&!videoUrl&&!pendingBgVideoFilename){m.textContent='请填写 YouTube 链接或上传视频文件';m.style.color='#dc2626';return}
   try{var r=await fetch(API_BASE+'/api/settings/appearance',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify(payload)});var d=await r.json();if(d.success){appearanceData=payload;applyAppearance(payload);m.textContent='✅ 外观已保存';m.style.color='#10b981';setTimeout(function(){m.textContent=''},3000)}else{m.textContent=d.message||'保存失败';m.style.color='#dc2626'}}catch(e){m.textContent='保存失败';m.style.color='#dc2626'}
-}
-
-// ===== 登录页背景 =====
-var pendingLoginBgFilename='';
-function toggleLoginBgType(){var v=document.querySelector('input[name="loginBgType"]:checked').value;document.getElementById('loginBgGradientSection').classList.toggle('hidden',v!=='gradient');document.getElementById('loginBgColorSection').classList.toggle('hidden',v!=='color');document.getElementById('loginBgImageSection').classList.toggle('hidden',v!=='image');updateLoginPreview()}
-function updateLoginPreview(){
-  var p=document.getElementById('loginPreviewArea');if(!p)return;
-  var lbt=document.querySelector('input[name="loginBgType"]:checked');lbt=lbt?lbt.value:'gradient';
-  if(lbt==='image'&&pendingLoginBgFilename){
-    var lbm=document.getElementById('appLoginBgMode');lbm=lbm?lbm.value:'cover';
-    applyBgToElement(p,'image','#667eea',API_BASE+'/backgrounds/'+encodeURIComponent(pendingLoginBgFilename),lbm);
-  }else if(lbt==='color'){
-    var sc=document.getElementById('appLoginBgSolid');sc=sc?sc.value:'#667eea';
-    p.style.backgroundImage='none';p.style.backgroundColor=sc;
-  }else{
-    var c1=document.getElementById('appLoginBgColor1');c1=c1?c1.value:'#667eea';
-    var c2=document.getElementById('appLoginBgColor2');c2=c2?c2.value:'#764ba2';
-    p.style.backgroundImage='linear-gradient(135deg,'+c1+' 0%,'+c2+' 100%)';p.style.backgroundColor='';
-  }
-}
-async function handleLoginBgUpload(input){
-  var file=input.files[0];if(!file)return;var fd=new FormData();fd.append('bg',file);
-  try{var r=await fetch(API_BASE+'/api/upload-bg',{method:'POST',headers:{'Authorization':'Bearer '+currentUser.token},body:fd});var d=await r.json();if(d.success){pendingLoginBgFilename=d.filename;document.getElementById('loginBgFileName').textContent=file.name;var p=document.getElementById('loginBgPreview');p.src=API_BASE+'/backgrounds/'+encodeURIComponent(d.filename);p.classList.remove('hidden');updateLoginPreview()}else alert(d.message||'上传失败')}catch(e){alert('上传失败')}
-  input.value='';
 }
 
 // ===== 用户管理 =====
@@ -1868,11 +1718,9 @@ async function loadUsers(){
   users.forEach(u=>{const item=document.createElement('div');item.className='user-item';
     const info=document.createElement('div');const ns=document.createElement('span');ns.className='username';ns.textContent=u.username;
     const nk=document.createElement('span');nk.className='nickname';nk.textContent=' '+(u.nickname||'');info.appendChild(ns);info.appendChild(nk);item.appendChild(info);
-    const btns=document.createElement('div');btns.style.cssText='display:flex;gap:6px;align-items:center';
-    const rp=document.createElement('button');rp.className='reset-pwd-btn';rp.textContent='改密';rp.addEventListener('click',()=>showResetPassword(u.username));btns.appendChild(rp);
-    if(u.is_admin){const a=document.createElement('span');a.style.cssText='color:#667eea;font-size:12px';a.textContent='管理员';btns.appendChild(a)}
-    else{const b=document.createElement('button');b.className='delete-btn';b.textContent='删除';b.addEventListener('click',()=>deleteUser(u.username));btns.appendChild(b)}
-    item.appendChild(btns);list.appendChild(item)});
+    if(u.is_admin){const a=document.createElement('span');a.style.cssText='color:#667eea;font-size:12px';a.textContent='管理员';item.appendChild(a)}
+    else{const b=document.createElement('button');b.className='delete-btn';b.textContent='删除';b.addEventListener('click',()=>deleteUser(u.username));item.appendChild(b)}
+    list.appendChild(item)});
   }catch(e){console.error('加载用户失败:',e)}
 }
 async function addUser(){
@@ -1883,22 +1731,6 @@ async function addUser(){
 async function deleteUser(u){if(!confirm('确定删除用户 '+u+'？'))return;await fetch(API_BASE+'/api/users/'+encodeURIComponent(u),{method:'DELETE',headers:authHeaders()});loadUsers()}
 async function exportUsers(){try{const r=await fetch(API_BASE+'/api/users/export',{headers:authHeaders()});if(r.status===403)return alert('需要管理员权限');const d=await r.json();const b=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download='users_'+new Date().toISOString().slice(0,10)+'.json';a.click();URL.revokeObjectURL(u);document.getElementById('userImportMsg').textContent='已导出 '+d.users.length+' 个用户'}catch(e){alert('导出失败')}}
 async function importUsers(input){const file=input.files[0];if(!file)return;const m=document.getElementById('userImportMsg');try{const t=await file.text();const d=JSON.parse(t);if(!d.users||!Array.isArray(d.users)){m.textContent='格式错误';input.value='';return}const r=await fetch(API_BASE+'/api/users/import',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({users:d.users})});const res=await r.json();if(res.success){m.textContent='新增'+res.created+'人，跳过'+res.skipped+'人';loadUsers()}else m.textContent=res.message||'导入失败'}catch(e){m.textContent='导入失败'}input.value=''}
-
-// ===== 管理员开关注册 =====
-async function toggleRegistration(){
-  try{const r=await fetch(API_BASE+'/api/settings/registration');const d=await r.json();const newState=!d.open;
-    const r2=await fetch(API_BASE+'/api/settings/registration',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({open:newState})});
-    const d2=await r2.json();if(d2.success){updateRegBtn(d2.open);alert(d2.open?'已开放注册，用户可在登录页自助注册':'已关闭注册')}else alert(d2.message||'操作失败');
-  }catch(e){alert('操作失败')}
-}
-function updateRegBtn(isOpen){const btn=document.getElementById('regToggleBtn');if(btn)btn.textContent=isOpen?'🔒 关闭注册':'📝 开放注册'}
-async function loadRegStatus(){try{const r=await fetch(API_BASE+'/api/settings/registration');const d=await r.json();updateRegBtn(d.open)}catch(e){}}
-
-// ===== 管理员重置密码 =====
-let resetPwdUsername='';
-function showResetPassword(username){resetPwdUsername=username;document.getElementById('resetPwdSection').classList.remove('hidden');document.getElementById('resetPwdTarget').textContent='正在为用户 "'+username+'" 重置密码';document.getElementById('resetPwdInput').value='';document.getElementById('resetPwdMsg').textContent=''}
-function cancelResetPassword(){document.getElementById('resetPwdSection').classList.add('hidden');resetPwdUsername=''}
-async function doResetPassword(){const np=document.getElementById('resetPwdInput').value;const msg=document.getElementById('resetPwdMsg');if(!np||np.length<6)return msg.textContent='新密码至少6个字符';try{const r=await fetch(API_BASE+'/api/admin/reset-password',{method:'POST',headers:authHeaders({'Content-Type':'application/json'}),body:JSON.stringify({username:resetPwdUsername,newPassword:np})});const d=await r.json();if(d.success){msg.style.color='#10b981';msg.textContent='密码已重置成功';document.getElementById('resetPwdInput').value='';setTimeout(()=>{msg.style.color='';cancelResetPassword()},2000)}else{msg.style.color='#dc2626';msg.textContent=d.message||'重置失败'}}catch(e){msg.style.color='#dc2626';msg.textContent='重置失败'}}
 
 function showBackup(){const t=new Date();const l=new Date(t.getFullYear(),t.getMonth()-1,1);document.getElementById('backupStart').value=l.toISOString().slice(0,10);document.getElementById('backupEnd').value=t.toISOString().slice(0,10);document.getElementById('backupModal').classList.remove('hidden')}
 function closeBackupModal(){document.getElementById('backupModal').classList.add('hidden')}
@@ -2024,7 +1856,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, endpoint TEXT UNIQUE NOT NULL, keys_p256dh TEXT NOT NULL, keys_auth TEXT NOT NULL, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE);
 `);
 
-const defaultSettings = { timezone:"Asia/Shanghai", login_title:"团队聊天室", chat_title:"团队聊天", send_text:"发送", send_color:"#667eea", bg_type:"color", bg_color:"#f5f5f5", bg_image:"", bg_mode:"cover", bg_video:"", bg_video_url:"", bg_video_mode:"cover", pinned_notice:"", pinned_notice_enabled:"0", registration_open:"0", login_bg_type:"gradient", login_bg_color1:"#667eea", login_bg_color2:"#764ba2", login_bg_image:"", login_bg_mode:"cover" };
+const defaultSettings = { timezone:"Asia/Shanghai", login_title:"团队聊天室", chat_title:"团队聊天", send_text:"发送", send_color:"#667eea", bg_type:"color", bg_color:"#f5f5f5", bg_image:"", bg_mode:"cover", bg_video:"", bg_video_url:"", bg_video_mode:"cover", pinned_notice:"", pinned_notice_enabled:"0" };
 const insSetting = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)");
 for (const [k, v] of Object.entries(defaultSettings)) insSetting.run(k, v);
 
@@ -2233,56 +2065,21 @@ app.post("/api/change-password",authMiddleware,async(req,res)=>{
   db.prepare("UPDATE users SET password=? WHERE id=?").run(await bcrypt.hash(newPassword,10),req.user.userId);res.json({success:true});
 });
 
-// ===== 开放注册 =====
-app.get("/api/settings/registration",(req,res)=>{res.json({open:getSetting("registration_open")==="1"})});
-app.post("/api/settings/registration",authMiddleware,adminMiddleware,(req,res)=>{
-  const{open}=req.body;setSetting("registration_open",open?"1":"0");
-  io.emit("registrationChanged",{open:!!open});
-  res.json({success:true,open:!!open});
-});
-app.post("/api/public-register",async(req,res)=>{
-  if(getSetting("registration_open")!=="1")return res.json({success:false,message:"注册通道已关闭"});
-  const{username,password,nickname}=req.body;
-  if(!username||!password)return res.json({success:false,message:"缺少参数"});
-  if(!/^[a-zA-Z0-9_.\-]+$/.test(username))return res.json({success:false,message:"用户名只允许字母数字下划线"});
-  if(username.length<2||username.length>20)return res.json({success:false,message:"用户名需 2-20 个字符"});
-  if(password.length<6)return res.json({success:false,message:"密码不能小于6位"});
-  const hashed=await bcrypt.hash(password,10);
-  try{db.prepare("INSERT INTO users (username,password,nickname) VALUES (?,?,?)").run(username,hashed,nickname||username);res.json({success:true})}
-  catch(e){res.json({success:false,message:"用户名已存在"})}
-});
-
-// ===== 管理员重置密码 =====
-app.post("/api/admin/reset-password",authMiddleware,adminMiddleware,async(req,res)=>{
-  const{username,newPassword}=req.body;
-  if(!username||!newPassword)return res.json({success:false,message:"缺少参数"});
-  if(newPassword.length<6)return res.json({success:false,message:"新密码不能小于6位"});
-  const user=db.prepare("SELECT id,is_admin FROM users WHERE username=?").get(username);
-  if(!user)return res.json({success:false,message:"用户不存在"});
-  if(user.is_admin&&user.id!==req.user.userId)return res.json({success:false,message:"不能修改其他管理员密码"});
-  db.prepare("UPDATE users SET password=? WHERE username=?").run(await bcrypt.hash(newPassword,10),username);
-  res.json({success:true});
-});
-
 // ===== Settings =====
 const VALID_TZ=["Asia/Shanghai","Asia/Tokyo","Asia/Singapore","Asia/Kolkata","Asia/Dubai","Europe/London","Europe/Paris","Europe/Moscow","America/New_York","America/Chicago","America/Denver","America/Los_Angeles","Pacific/Auckland","Australia/Sydney"];
 app.get("/api/settings/timezone",authMiddleware,(req,res)=>{res.json({timezone:getSetting("timezone"),serverTimezone:Intl.DateTimeFormat().resolvedOptions().timeZone})});
 app.post("/api/settings/timezone",authMiddleware,adminMiddleware,(req,res)=>{const{timezone}=req.body;if(!timezone||!VALID_TZ.includes(timezone))return res.json({success:false,message:"不支持的时区"});setSetting("timezone",timezone);io.emit("timezoneChanged",{timezone});res.json({success:true})});
 
 app.get("/api/settings/appearance",(req,res)=>{
-  const keys=["login_title","chat_title","send_text","send_color","bg_type","bg_color","bg_image","bg_mode","bg_video","bg_video_url","bg_video_mode","timezone","login_bg_type","login_bg_color1","login_bg_color2","login_bg_image","login_bg_mode"];
+  const keys=["login_title","chat_title","send_text","send_color","bg_type","bg_color","bg_image","bg_mode","bg_video","bg_video_url","bg_video_mode","timezone"];
   const r={};keys.forEach(k=>{r[k]=getSetting(k)});res.json(r);
 });
 app.post("/api/settings/appearance",authMiddleware,adminMiddleware,(req,res)=>{
-  const body=req.body;const allowed=["login_title","chat_title","send_text","send_color","bg_type","bg_color","bg_image","bg_mode","bg_video","bg_video_url","bg_video_mode","login_bg_type","login_bg_color1","login_bg_color2","login_bg_image","login_bg_mode"];
+  const body=req.body;const allowed=["login_title","chat_title","send_text","send_color","bg_type","bg_color","bg_image","bg_mode","bg_video","bg_video_url","bg_video_mode"];
   if(body.send_color&&!/^#[0-9a-fA-F]{6}$/.test(body.send_color))return res.json({success:false,message:"颜色格式错误"});
   if(body.bg_color&&!/^#[0-9a-fA-F]{6}$/.test(body.bg_color))return res.json({success:false,message:"颜色格式错误"});
-  if(body.login_bg_color1&&!/^#[0-9a-fA-F]{6}$/.test(body.login_bg_color1))return res.json({success:false,message:"颜色格式错误"});
-  if(body.login_bg_color2&&!/^#[0-9a-fA-F]{6}$/.test(body.login_bg_color2))return res.json({success:false,message:"颜色格式错误"});
   if(body.bg_type&&!["color","image","video"].includes(body.bg_type))return res.json({success:false,message:"类型错误"});
-  if(body.login_bg_type&&!["gradient","color","image"].includes(body.login_bg_type))return res.json({success:false,message:"登录背景类型错误"});
   if(body.bg_mode&&!["cover","contain","stretch","tile"].includes(body.bg_mode))return res.json({success:false,message:"显示方式错误"});
-  if(body.login_bg_mode&&!["cover","contain","stretch","tile"].includes(body.login_bg_mode))body.login_bg_mode="cover";
   if(body.bg_video_url&&body.bg_video_url.length>500)body.bg_video_url=body.bg_video_url.substring(0,500);
   if(body.bg_video_mode&&!["cover","contain","stretch"].includes(body.bg_video_mode))body.bg_video_mode="cover";
   if(body.login_title&&body.login_title.length>30)body.login_title=body.login_title.substring(0,30);
@@ -2290,7 +2087,7 @@ app.post("/api/settings/appearance",authMiddleware,adminMiddleware,(req,res)=>{
   if(body.send_text&&body.send_text.length>10)body.send_text=body.send_text.substring(0,10);
   const upd=db.prepare("INSERT OR REPLACE INTO settings (key,value,updated_at) VALUES (?,?,datetime('now'))");
   db.transaction(()=>{for(const k of allowed){if(body[k]!==undefined)upd.run(k,String(body[k]))}})();
-  const bd={};["login_title","chat_title","send_text","send_color","bg_type","bg_color","bg_image","bg_mode","bg_video","bg_video_url","bg_video_mode","timezone","login_bg_type","login_bg_color1","login_bg_color2","login_bg_image","login_bg_mode"].forEach(k=>{bd[k]=getSetting(k)});
+  const bd={};["login_title","chat_title","send_text","send_color","bg_type","bg_color","bg_image","bg_mode","bg_video","bg_video_url","bg_video_mode","timezone"].forEach(k=>{bd[k]=getSetting(k)});
   io.emit("appearanceChanged",bd);res.json({success:true});
 });
 
@@ -2450,7 +2247,7 @@ db.exec(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT,
 CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,username TEXT NOT NULL,content TEXT,type TEXT DEFAULT "text",file_name TEXT,file_path TEXT,file_size INTEGER,reply_to INTEGER,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE);
 CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,endpoint TEXT UNIQUE NOT NULL,keys_p256dh TEXT NOT NULL,keys_auth TEXT NOT NULL,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE);`);
-const defs={timezone:"Asia/Shanghai",login_title:"团队聊天室",chat_title:"团队聊天",send_text:"发送",send_color:"#667eea",bg_type:"color",bg_color:"#f5f5f5",bg_image:"",bg_mode:"cover",bg_video:"",bg_video_url:"",bg_video_mode:"cover",pinned_notice:"",pinned_notice_enabled:"0",registration_open:"0",login_bg_type:"gradient",login_bg_color1:"#667eea",login_bg_color2:"#764ba2",login_bg_image:"",login_bg_mode:"cover"};
+const defs={timezone:"Asia/Shanghai",login_title:"团队聊天室",chat_title:"团队聊天",send_text:"发送",send_color:"#667eea",bg_type:"color",bg_color:"#f5f5f5",bg_image:"",bg_mode:"cover",bg_video:"",bg_video_url:"",bg_video_mode:"cover",pinned_notice:"",pinned_notice_enabled:"0"};
 const ins=db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)");for(const[k,v] of Object.entries(defs))ins.run(k,v);
 const au=process.env.ADMIN_USER_ENV,ap=process.env.ADMIN_PASS_ENV,h=bcrypt.hashSync(ap,10);
 try{db.prepare("INSERT INTO users (username,password,is_admin) VALUES (?,?,1)").run(au,h);console.log("✅ 管理员已创建")}catch(e){db.prepare("UPDATE users SET password=?,is_admin=1 WHERE username=?").run(h,au);console.log("✅ 管理员密码已重置")}
@@ -2462,11 +2259,10 @@ db.close();
 }
 
 setup_service() {
-    local pm2name="${1:-teamchat}"
-    echo -e "\n${YELLOW}阶段 6/6: 配置并启动服务 ($pm2name)...${NC}"
-    pm2 stop "$pm2name" > /dev/null 2>&1 || true
-    pm2 delete "$pm2name" > /dev/null 2>&1 || true
-    cd "$APP_DIR"; PORT=$PORT pm2 start server.js --name "$pm2name"; pm2 save
+    echo -e "\n${YELLOW}阶段 6/6: 配置并启动服务...${NC}"
+    pm2 stop teamchat > /dev/null 2>&1 || true
+    pm2 delete teamchat > /dev/null 2>&1 || true
+    cd "$APP_DIR"; PORT=$PORT pm2 start server.js --name teamchat; pm2 save
     pm2 startup systemd -u root --hp /root > /dev/null 2>&1 || pm2 startup > /dev/null 2>&1 || true
     pm2 save
     echo -e "${GREEN}✅ 服务配置完成${NC}"
@@ -2664,48 +2460,21 @@ do_multi_instance() {
     echo -e "\n${YELLOW}========== 多实例管理 ==========${NC}"
     list_instances
     echo -e "  ${GREEN}1${NC}. 部署新实例"
-    echo -e "  ${GREEN}2${NC}. 更新指定实例"
-    echo -e "  ${GREEN}3${NC}. 启动/重启指定实例"
-    echo -e "  ${GREEN}4${NC}. 停止指定实例"
-    echo -e "  ${GREEN}5${NC}. 查看指定实例日志"
-    echo -e "  ${GREEN}6${NC}. 删除指定实例"
+    echo -e "  ${GREEN}2${NC}. 启动/重启指定实例"
+    echo -e "  ${GREEN}3${NC}. 停止指定实例"
+    echo -e "  ${GREEN}4${NC}. 查看指定实例日志"
+    echo -e "  ${GREEN}5${NC}. 删除指定实例"
     echo -e "  ${GREEN}0${NC}. 返回主菜单"
     printf "请选择: "; read -r mi_choice
     case $mi_choice in
         1) do_new_instance ;;
-        2) do_update_selected_instance ;;
-        3) do_instance_action "restart" ;;
-        4) do_instance_action "stop" ;;
-        5) do_instance_action "logs" ;;
-        6) do_instance_action "delete" ;;
+        2) do_instance_action "restart" ;;
+        3) do_instance_action "stop" ;;
+        4) do_instance_action "logs" ;;
+        5) do_instance_action "delete" ;;
         0) return ;;
         *) echo -e "${RED}无效${NC}" ;;
     esac
-}
-
-do_update_selected_instance() {
-    echo ""
-    select_instance "更新" || return
-    echo ""
-    echo -e "${CYAN}  → 将更新实例: ${SELECTED_PM2NAME}${NC}"
-    echo -e "${CYAN}  → 路径: ${SELECTED_DIR}${NC}"
-    printf "确认更新? (y/n): "; read -r confirm; [ "$confirm" != "y" ] && { echo "已取消"; return 0; }
-
-    local ORIG_APP_DIR="$APP_DIR"
-    APP_DIR="$SELECTED_DIR"
-    PORT=$(grep -oP 'const PORT = process\.env\.PORT \|\| \K\d+' "$APP_DIR/server.js" 2>/dev/null || echo "3000")
-
-    detect_os; install_dependencies; install_nodejs; write_app_files; install_npm_deps; update_database
-    setup_service "$SELECTED_PM2NAME"
-    APP_DIR="$ORIG_APP_DIR"
-
-    echo ""
-    echo -e "${GREEN}================================================${NC}"
-    echo -e "${GREEN}  🎉 实例 ${SELECTED_PM2NAME} 更新完成！${NC}"
-    echo -e "${GREEN}  ✅ 所有用户数据、聊天记录和设置已保留${NC}"
-    echo -e "${GREEN}================================================${NC}"
-    echo -e "${YELLOW}建议用户清除浏览器缓存以获取最新界面${NC}"
-    echo ""
 }
 
 do_new_instance() {
@@ -3022,177 +2791,8 @@ do_instance_action() {
 
 #===============================================================================
 
-update_database() {
-    echo -e "\n${YELLOW}更新数据库结构...${NC}"
-    cd "$APP_DIR"
-    node -e '
-const Database=require("better-sqlite3"),fs=require("fs"),path=require("path"),crypto=require("crypto");
-const DB_PATH=path.join(process.env.PWD,"database.sqlite"),SF=path.join(process.env.PWD,".jwt_secret");
-if(!fs.existsSync(SF))fs.writeFileSync(SF,crypto.randomBytes(32).toString("hex"),{mode:0o600});
-const db=new Database(DB_PATH);db.pragma("journal_mode=WAL");db.pragma("foreign_keys=ON");
-db.exec(`CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT,username TEXT UNIQUE NOT NULL,password TEXT NOT NULL,nickname TEXT,avatar TEXT,is_admin INTEGER DEFAULT 0,last_login_at TEXT,created_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,username TEXT NOT NULL,content TEXT,type TEXT DEFAULT "text",file_name TEXT,file_path TEXT,file_size INTEGER,reply_to INTEGER,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE);
-CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY,value TEXT NOT NULL,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS push_subscriptions (id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,endpoint TEXT UNIQUE NOT NULL,keys_p256dh TEXT NOT NULL,keys_auth TEXT NOT NULL,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE);`);
-try{db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER DEFAULT 0")}catch(e){}
-try{db.exec("ALTER TABLE messages ADD COLUMN reply_to INTEGER")}catch(e){}
-try{db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT")}catch(e){}
-const defs={timezone:"Asia/Shanghai",login_title:"团队聊天室",chat_title:"团队聊天",send_text:"发送",send_color:"#667eea",bg_type:"color",bg_color:"#f5f5f5",bg_image:"",bg_mode:"cover",bg_video:"",bg_video_url:"",bg_video_mode:"cover",pinned_notice:"",pinned_notice_enabled:"0",registration_open:"0",login_bg_type:"gradient",login_bg_color1:"#667eea",login_bg_color2:"#764ba2",login_bg_image:"",login_bg_mode:"cover"};
-const ins=db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)");for(const[k,v] of Object.entries(defs))ins.run(k,v);
-const cnt=db.prepare("SELECT COUNT(*) as c FROM users WHERE is_admin=1").get();
-if(!cnt||cnt.c===0){console.log("⚠️  未找到管理员，可通过菜单选项5修改配置来设置管理员")}
-else{console.log("✅ 数据库结构已更新，保留所有用户数据和设置")}
-db.close();
-'
-    chmod 600 "$APP_DIR/.jwt_secret" "$APP_DIR/.vapid_keys" 2>/dev/null || true
-    chmod 600 "$APP_DIR/database.sqlite" 2>/dev/null || true
-    echo -e "${GREEN}✅ 数据库更新完成${NC}"
-}
-
 do_install() {
-    print_header
-
-    # ===== 扫描所有已有实例 =====
-    local all_instances=()
-    local inst_idx=0
-
-    # 默认实例
-    if [ -f "$APP_DIR/database.sqlite" ] && [ -f "$APP_DIR/server.js" ]; then
-        local dport dadmin
-        dport=$(grep -oP 'const PORT = process\.env\.PORT \|\| \K\d+' "$APP_DIR/server.js" 2>/dev/null || echo "3000")
-        dadmin=$(cd "$APP_DIR" && node -e "const D=require('better-sqlite3');try{const d=new D('database.sqlite');const u=d.prepare('SELECT username FROM users WHERE is_admin=1 LIMIT 1').get();if(u)process.stdout.write(u.username)}catch(e){}" 2>/dev/null || echo "admin")
-        all_instances+=("teamchat|$APP_DIR|$dport|$dadmin|teamchat.conf")
-        inst_idx=$((inst_idx+1))
-    fi
-    # 多实例
-    for dir in "$INSTANCES_DIR"/${INSTANCES_PREFIX}-*; do
-        [ -d "$dir" ] || continue
-        [ -f "$dir/server.js" ] || continue
-        local iname=$(basename "$dir")
-        local iport iadmin
-        iport=$(grep -oP 'const PORT = process\.env\.PORT \|\| \K\d+' "$dir/server.js" 2>/dev/null || echo "?")
-        iadmin=$(cd "$dir" && node -e "const D=require('better-sqlite3');try{const d=new D('database.sqlite');const u=d.prepare('SELECT username FROM users WHERE is_admin=1 LIMIT 1').get();if(u)process.stdout.write(u.username)}catch(e){}" 2>/dev/null || echo "?")
-        all_instances+=("$iname|$dir|$iport|$iadmin|${iname}.conf")
-        inst_idx=$((inst_idx+1))
-    done
-
-    local IS_UPDATE="false"
-    local UPDATE_PM2NAME="teamchat"
-    local UPDATE_DIR="$APP_DIR"
-    local UPDATE_NGINX_CONF="teamchat.conf"
-
-    if [ "$inst_idx" -gt 0 ]; then
-        echo ""
-        echo -e "${GREEN}================================================${NC}"
-        echo -e "${GREEN}  ✅ 检测到已有实例 (共 ${inst_idx} 个)${NC}"
-        echo -e "${GREEN}================================================${NC}"
-        echo ""
-        local i=0
-        for entry in "${all_instances[@]}"; do
-            i=$((i+1))
-            local ename eport eadmin
-            ename="${entry%%|*}"
-            eport=$(echo "$entry" | cut -d'|' -f3)
-            eadmin=$(echo "$entry" | cut -d'|' -f4)
-            if [ "$ename" = "teamchat" ]; then
-                echo -e "  ${GREEN}${i}${NC}. 更新 ${CYAN}$ename (默认)${NC}  端口:$eport  管理员:$eadmin"
-            else
-                echo -e "  ${GREEN}${i}${NC}. 更新 ${CYAN}$ename${NC}  端口:$eport  管理员:$eadmin"
-            fi
-        done
-        if [ "$inst_idx" -gt 1 ]; then
-            echo -e "  ${GREEN}A${NC}. 更新全部实例"
-        fi
-        echo -e "  ${GREEN}N${NC}. 全新安装 (新建默认实例)"
-        echo -e "  ${GREEN}0${NC}. 返回主菜单"
-        echo ""
-        printf "请选择 [1]: "; read -r install_mode
-        install_mode=${install_mode:-1}
-
-        case $install_mode in
-            0) return 0 ;;
-            [Nn]) IS_UPDATE="false" ;;
-            [Aa])
-                # 更新全部实例
-                echo ""
-                echo -e "${CYAN}将更新全部 ${inst_idx} 个实例...${NC}"
-                detect_os; install_dependencies; install_nodejs
-                local ORIG_APP_DIR="$APP_DIR"
-                for entry in "${all_instances[@]}"; do
-                    local ename edir eport eadmin enginx
-                    ename=$(echo "$entry" | cut -d'|' -f1)
-                    edir=$(echo "$entry" | cut -d'|' -f2)
-                    eport=$(echo "$entry" | cut -d'|' -f3)
-                    eadmin=$(echo "$entry" | cut -d'|' -f4)
-                    enginx=$(echo "$entry" | cut -d'|' -f5)
-                    echo ""
-                    echo -e "${YELLOW}━━━ 正在更新 $ename (端口:$eport) ━━━${NC}"
-                    APP_DIR="$edir"
-                    PORT="$eport"
-                    write_app_files; install_npm_deps; update_database
-                    setup_service "$ename"
-                    echo -e "${GREEN}✅ $ename 更新完成${NC}"
-                done
-                APP_DIR="$ORIG_APP_DIR"
-                echo ""
-                echo -e "${GREEN}================================================${NC}"
-                echo -e "${GREEN}  🎉 全部 ${inst_idx} 个实例已更新！${NC}"
-                echo -e "${GREEN}  ✅ 所有用户数据、聊天记录和设置已保留${NC}"
-                echo -e "${GREEN}================================================${NC}"
-                echo ""
-                echo -e "${YELLOW}更新提示: 建议用户清除浏览器缓存以获取最新界面${NC}"
-                echo ""
-                return 0
-                ;;
-            *)
-                # 更新指定实例
-                if [[ "$install_mode" =~ ^[0-9]+$ ]] && [ "$install_mode" -ge 1 ] && [ "$install_mode" -le "$inst_idx" ]; then
-                    local sel_entry="${all_instances[$((install_mode-1))]}"
-                    UPDATE_PM2NAME=$(echo "$sel_entry" | cut -d'|' -f1)
-                    UPDATE_DIR=$(echo "$sel_entry" | cut -d'|' -f2)
-                    UPDATE_NGINX_CONF=$(echo "$sel_entry" | cut -d'|' -f5)
-                    IS_UPDATE="true"
-                else
-                    echo -e "${RED}无效选择${NC}"; return 0
-                fi
-                ;;
-        esac
-    fi
-
-    if [ "$IS_UPDATE" = "true" ]; then
-        # 临时切换到目标实例目录
-        local ORIG_APP_DIR="$APP_DIR"
-        APP_DIR="$UPDATE_DIR"
-        PORT=$(grep -oP 'const PORT = process\.env\.PORT \|\| \K\d+' "$APP_DIR/server.js" 2>/dev/null || echo "3000")
-        ADMIN_USER=$(cd "$APP_DIR" && node -e "const D=require('better-sqlite3');try{const d=new D('database.sqlite');const u=d.prepare('SELECT username FROM users WHERE is_admin=1 LIMIT 1').get();if(u)process.stdout.write(u.username)}catch(e){}" 2>/dev/null || echo "admin")
-
-        echo ""
-        echo -e "${CYAN}  → 更新实例: ${UPDATE_PM2NAME}${NC}"
-        echo -e "${CYAN}  → 保留端口 ${PORT}、管理员 ${ADMIN_USER} 及所有数据${NC}"
-        echo ""
-        echo "==========================================="
-        echo "  模式: 🔄 更新 $UPDATE_PM2NAME | 端口: $PORT | 管理员: $ADMIN_USER"
-        echo "==========================================="
-        printf "确认更新? (y/n): "; read -r confirm; [ "$confirm" != "y" ] && { APP_DIR="$ORIG_APP_DIR"; echo "已取消"; return 0; }
-
-        detect_os; install_dependencies; install_nodejs; write_app_files; install_npm_deps; update_database
-        setup_service "$UPDATE_PM2NAME"
-        APP_DIR="$ORIG_APP_DIR"
-
-        echo ""
-        echo -e "${GREEN}================================================${NC}"
-        echo -e "${GREEN}  🎉 实例 ${UPDATE_PM2NAME} 更新完成！${NC}"
-        echo -e "${GREEN}  ✅ 所有用户数据、聊天记录和设置已保留${NC}"
-        echo -e "${GREEN}================================================${NC}"
-        echo ""
-        echo -e "${YELLOW}更新提示: 建议用户清除浏览器缓存以获取最新界面${NC}"
-        echo ""
-        return 0
-    fi
-
-    # ===== 全新安装流程 =====
-    DOMAIN=$(show_ip_menu)
-
+    print_header; DOMAIN=$(show_ip_menu)
     echo ""; echo -e "请配置以下参数:"
     while true; do printf "  管理员用户名 [admin]: "; read -r input; ADMIN_USER=${input:-admin}; validate_input "$ADMIN_USER" "用户名" && break; done
     while true; do printf "  管理员密码 [admin123]: "; read -r input; ADMIN_PASS=${input:-admin123}; [ ${#ADMIN_PASS} -ge 6 ] && break; echo -e "${RED}密码不能小于6位${NC}"; done
@@ -3224,13 +2824,12 @@ do_install() {
 
     echo ""
     echo "==========================================="
-    echo "  模式: 🆕 全新安装 | 端口: $PORT | 管理员: $ADMIN_USER"
-    echo "  域名/IP: $domain | HTTPS: $([ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ] && echo 是 || echo 否)"
+    echo "  域名/IP: $domain | 端口: $PORT | 管理员: $ADMIN_USER"
+    echo "  HTTPS: $([ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ] && echo 是 || echo 否)"
     echo "==========================================="
     printf "确认部署? (y/n): "; read -r confirm; [ "$confirm" != "y" ] && { echo "已取消"; return 0; }
 
-    detect_os; install_dependencies; install_nodejs; write_app_files; install_npm_deps; init_database
-    setup_service "teamchat"
+    detect_os; install_dependencies; install_nodejs; write_app_files; install_npm_deps; init_database; setup_service
     if [ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ]; then generate_nginx_config "$domain" "yes"; else generate_nginx_config "$domain" "no"; fi
 
     echo ""
