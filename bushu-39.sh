@@ -627,6 +627,14 @@ const App={
     const replyTo=ref(null);
     const noticeExpanded=ref(false);
     const msgInput=ref('');
+    const loginUser=ref('');
+    const loginPass=ref('');
+    const regUser=ref('');
+    const regNick=ref('');
+    const regPass=ref('');
+    const regPass2=ref('');
+    const chainTopic=ref('');
+    const chainDesc=ref('');
     const msgListKey=ref(0);/* force re-render */
 
     const currentChannel=computed(()=>store.channels.find(c=>c.id===store.currentChannelId)||null);
@@ -709,6 +717,7 @@ const App={
     function setReply(msg){replyTo.value=msg;ctxMenu.value=null;document.querySelector('.input-area textarea')?.focus()}
 
     return{page,loginErr,showReg,sidebarOpen,showMembers,currentModal,modalData,replyTo,noticeExpanded,msgInput,msgListKey,
+      loginUser,loginPass,regUser,regNick,regPass,regPass2,chainTopic,chainDesc,
       currentChannel,currentMessages,onlineSet,channelMembers,ctxMenu,
       doLogin,doRegister,logout,sendMsg,handleKey,insertNewline,autoGrow,uploadFile,sendChain,joinChain,parseChain,loadMore,showCtx,setReply,
       switchChannel:async(id)=>{sidebarOpen.value=false;await switchChannel(id)},
@@ -720,14 +729,14 @@ const App={
   <div class="login-card">
     <h1 id="loginTitle">{{store.appearance.login_title||'团队聊天室'}}</h1>
     <div v-if="!showReg">
-      <input id="lu" type="text" placeholder="用户名" @keyup.enter="$refs.lp?.focus()">
-      <input ref="lp" id="lpp" type="password" placeholder="密码" @keyup.enter="doLogin(document.getElementById('lu').value,document.getElementById('lpp').value)">
-      <button @click="doLogin(document.getElementById('lu').value,document.getElementById('lpp').value)">登录</button>
+      <input v-model="loginUser" type="text" placeholder="用户名" @keyup.enter="$refs.lp?.focus()">
+      <input ref="lp" v-model="loginPass" type="password" placeholder="密码" @keyup.enter="doLogin(loginUser,loginPass)">
+      <button @click="doLogin(loginUser,loginPass)">登录</button>
     </div>
     <div v-else>
-      <input id="ru" type="text" placeholder="用户名"><input id="rn" type="text" placeholder="昵称 (选填)">
-      <input id="rp" type="password" placeholder="密码 (至少6位)"><input id="rp2" type="password" placeholder="确认密码">
-      <button @click="doRegister(document.getElementById('ru').value,document.getElementById('rp').value,document.getElementById('rp2').value,document.getElementById('rn').value)">注册</button>
+      <input v-model="regUser" type="text" placeholder="用户名"><input v-model="regNick" type="text" placeholder="昵称 (选填)">
+      <input v-model="regPass" type="password" placeholder="密码 (至少6位)"><input v-model="regPass2" type="password" placeholder="确认密码">
+      <button @click="doRegister(regUser,regPass,regPass2,regNick)">注册</button>
     </div>
     <p v-if="loginErr" class="error" :style="{color:loginErr.startsWith('✅')?'#10b981':'#dc2626'}">{{loginErr}}</p>
     <p v-if="store.regOpen" class="reg-toggle"><a href="#" @click.prevent="showReg=!showReg;loginErr=''">{{showReg?'已有账号？去登录':'还没有账号？注册一个'}}</a></p>
@@ -969,9 +978,9 @@ const App={
 <!-- Chain modal -->
 <div v-if="currentModal==='chainNew'" class="modal-overlay" @click.self="currentModal=''">
   <div class="modal" style="max-width:400px"><h3>🚂 发起接龙</h3>
-    <label class="field-label">接龙话题</label><input id="chainTopic" type="text" placeholder="例如：明天团建午餐吃什么？">
-    <label class="field-label">补充说明 (选填)</label><textarea id="chainDesc" rows="2" placeholder="规则、选项等..."></textarea>
-    <div style="display:flex;gap:10px;margin-top:10px"><button class="secondary" style="flex:1" @click="currentModal=''">取消</button><button style="flex:1" @click="sendChain(document.getElementById('chainTopic').value.trim(),document.getElementById('chainDesc').value.trim())">发起</button></div>
+    <label class="field-label">接龙话题</label><input v-model="chainTopic" type="text" placeholder="例如：明天团建午餐吃什么？">
+    <label class="field-label">补充说明 (选填)</label><textarea v-model="chainDesc" rows="2" placeholder="规则、选项等..."></textarea>
+    <div style="display:flex;gap:10px;margin-top:10px"><button class="secondary" style="flex:1" @click="currentModal=''">取消</button><button style="flex:1" @click="sendChain(chainTopic.trim(),chainDesc.trim())">发起</button></div>
   </div>
 </div>
 `,
