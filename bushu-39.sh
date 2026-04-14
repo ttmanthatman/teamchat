@@ -539,7 +539,7 @@ function initSocket(){
 }
 
 /* ===== Message store (per channel) ===== */
-const msgStore={};
+const msgStore=Vue.reactive({});
 async function loadMessages(channelId,before){
   if(!channelId)return;
   if(!msgStore[channelId])msgStore[channelId]={msgs:[],oldest:null,allLoaded:false};
@@ -721,7 +721,7 @@ const App={
       currentChannel,currentMessages,onlineSet,channelMembers,ctxMenu,
       doLogin,doRegister,logout,sendMsg,handleKey,insertNewline,autoGrow,uploadFile,sendChain,joinChain,parseChain,loadMore,showCtx,setReply,
       switchChannel:async(id)=>{sidebarOpen.value=false;await switchChannel(id)},
-      store,esc,fmtTime,fmtSize,avatarUrl,sanitize,
+      store,msgStore,API,esc,fmtTime,fmtSize,avatarUrl,sanitize,
       togglePush,checkPush}
   },
   template:`
