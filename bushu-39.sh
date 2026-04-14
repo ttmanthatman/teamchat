@@ -1591,8 +1591,8 @@ let adminId;
 try{const r=db.prepare("INSERT INTO users (username,password,is_admin) VALUES (?,?,1)").run(au,h);adminId=r.lastInsertRowid;console.log("✅ 管理员已创建")}catch(e){db.prepare("UPDATE users SET password=?,is_admin=1 WHERE username=?").run(h,au);const u=db.prepare("SELECT id FROM users WHERE username=?").get(au);adminId=u?u.id:1;console.log("✅ 管理员密码已重置")}
 // Ensure default channel
 const defCh=db.prepare("SELECT id FROM channels WHERE is_default=1").get();
-if(!defCh){const r=db.prepare("INSERT INTO channels (name,description,is_default,is_private) VALUES (\"综合频道\",\"默认公开频道\",1,0)").run();const chId=r.lastInsertRowid;db.prepare("INSERT OR IGNORE INTO channel_members (channel_id,user_id,role) VALUES (?,?,\"owner\")").run(chId,adminId);console.log("✅ 默认频道已创建")}
-else{db.prepare("INSERT OR IGNORE INTO channel_members (channel_id,user_id,role) VALUES (?,?,\"owner\")").run(defCh.id,adminId)}
+if(!defCh){const r=db.prepare("INSERT INTO channels (name,description,is_default,is_private) VALUES (?,?,1,0)").run("\u7EFC\u5408\u9891\u9053","\u9ED8\u8BA4\u516C\u5F00\u9891\u9053");const chId=r.lastInsertRowid;db.prepare("INSERT OR IGNORE INTO channel_members (channel_id,user_id,role) VALUES (?,?,?)").run(chId,adminId,"owner");console.log("✅ 默认频道已创建")}
+else{db.prepare("INSERT OR IGNORE INTO channel_members (channel_id,user_id,role) VALUES (?,?,?)").run(defCh.id,adminId,"owner")}
 db.close();
 '
     chmod 600 "$APP_DIR/.jwt_secret" "$APP_DIR/.vapid_keys" 2>/dev/null || true
@@ -2208,10 +2208,10 @@ try{db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT")}catch(e){}
 try{db.exec("ALTER TABLE messages ADD COLUMN channel_id INTEGER DEFAULT 1")}catch(e){}
 // Ensure default channel
 const defCh=db.prepare("SELECT id FROM channels WHERE is_default=1").get();
-if(!defCh){const r=db.prepare("INSERT INTO channels (name,description,is_default,is_private) VALUES (\"综合频道\",\"默认公开频道\",1,0)").run();const chId=r.lastInsertRowid;
-const users=db.prepare("SELECT id FROM users").all();users.forEach(u=>db.prepare("INSERT OR IGNORE INTO channel_members (channel_id,user_id,role) VALUES (?,?,\"member\")").run(chId,u.id));
+if(!defCh){const r=db.prepare("INSERT INTO channels (name,description,is_default,is_private) VALUES (?,?,1,0)").run("\u7EFC\u5408\u9891\u9053","\u9ED8\u8BA4\u516C\u5F00\u9891\u9053");const chId=r.lastInsertRowid;
+const users=db.prepare("SELECT id FROM users").all();users.forEach(u=>db.prepare("INSERT OR IGNORE INTO channel_members (channel_id,user_id,role) VALUES (?,?,?)").run(chId,u.id,"member"));
 db.prepare("UPDATE messages SET channel_id=? WHERE channel_id IS NULL OR channel_id=0").run(chId);console.log("✅ 默认频道已创建并迁移消息")}
-else{const users=db.prepare("SELECT id FROM users").all();users.forEach(u=>db.prepare("INSERT OR IGNORE INTO channel_members (channel_id,user_id,role) VALUES (?,?,\"member\")").run(defCh.id,u.id))}
+else{const users=db.prepare("SELECT id FROM users").all();users.forEach(u=>db.prepare("INSERT OR IGNORE INTO channel_members (channel_id,user_id,role) VALUES (?,?,?)").run(defCh.id,u.id,"member"))}
 const defs={timezone:"Asia/Shanghai",login_title:"团队聊天室",chat_title:"TeamChat",send_text:"发送",send_color:"#667eea",bg_type:"color",bg_color:"#f0f2f5",bg_image:"",bg_mode:"cover",bg_video:"",bg_video_url:"",bg_video_mode:"cover",pinned_notice:"",pinned_notice_enabled:"0",registration_open:"0",login_bg_type:"gradient",login_bg_color1:"#667eea",login_bg_color2:"#764ba2",login_bg_image:"",login_bg_mode:"cover",login_bg_video:"",login_bg_video_url:"",login_bg_video_mode:"cover"};
 const ins=db.prepare("INSERT OR IGNORE INTO settings (key,value) VALUES (?,?)");for(const[k,v] of Object.entries(defs))ins.run(k,v);
 const cnt=db.prepare("SELECT COUNT(*) as c FROM users WHERE is_admin=1").get();
