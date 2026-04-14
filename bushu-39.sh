@@ -451,6 +451,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <body>
 <div id="app"></div>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
 <script src="/app.js?v=20260414"></script>
 </body>
 </html>
@@ -1080,12 +1081,12 @@ const App={
 /* iOS PWA keyboard fix */
 (function(){if(!/iPad|iPhone|iPod/.test(navigator.userAgent))return;document.addEventListener('focusout',function(e){setTimeout(function(){window.scrollTo(0,0)},100)});if(window.visualViewport){var lh=window.visualViewport.height;window.visualViewport.addEventListener('resize',function(){var nh=window.visualViewport.height;if(nh>lh){setTimeout(function(){window.scrollTo(0,0)},50)}lh=nh})}})();
 
-/* Load Vue 3 from CDN then mount */
+/* Mount Vue app (Vue 3 loaded from HTML) */
 (function(){
-  const s=document.createElement('script');
-  s.src='https://unpkg.com/vue@3/dist/vue.global.prod.js';
-  s.onload=function(){const app=Vue.createApp(App);app.config.globalProperties.$root=app._instance?.proxy;app.mount('#app');nextTick(()=>applyAppearance(store.appearance))};
-  document.head.appendChild(s);
+  const app=Vue.createApp(App);
+  app.config.globalProperties.$root=app._instance?.proxy;
+  app.mount('#app');
+  Vue.nextTick(()=>applyAppearance(store.appearance));
 })();
 APPEOF
 
