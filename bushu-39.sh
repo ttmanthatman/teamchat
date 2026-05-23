@@ -62,6 +62,25 @@ validate_input() {
     return 0
 }
 
+validate_domain() {
+    local domain="$1"
+    if [[ "$domain" =~ ^[A-Za-z0-9.-]+$ ]] && [[ "$domain" != .* ]] && [[ "$domain" != *..* ]] && [[ "$domain" != -* ]] && [[ "$domain" != *- ]] && [[ "$domain" != *-.* ]] && [[ "$domain" != *.-* ]]; then
+        return 0
+    fi
+    echo -e "${RED}错误: 域名包含非法字符${NC}"; return 1
+}
+
+read_admin_password() {
+    local p1 p2
+    while true; do
+        printf "  管理员密码: "; read -rs p1; echo
+        [ ${#p1} -ge 8 ] || { echo -e "${RED}密码不能小于8位${NC}"; continue; }
+        printf "  再次输入管理员密码: "; read -rs p2; echo
+        [ "$p1" = "$p2" ] || { echo -e "${RED}两次密码不一致${NC}"; continue; }
+        ADMIN_PASS="$p1"; break
+    done
+}
+
 get_admin_username() {
     if [ -f "$APP_DIR/database.sqlite" ] && command -v node >/dev/null 2>&1 && [ -d "$APP_DIR/node_modules" ]; then
         local admin_user
@@ -220,7 +239,7 @@ console.log("✅ PWA 图标已生成");
 
     # ===== Service Worker =====
     cat > "$APP_DIR/public/sw.js" <<'SWEOF'
-var CACHE_NAME = "teamchat-v9";
+var CACHE_NAME = "teamchat-v9-securityfix-20260523";
 var OFFLINE_URLS = ["/", "/index.html", "/images/icon-192.png", "/images/icon-96.png", "/images/default-avatar.svg"];
 self.addEventListener("install", function(e) { e.waitUntil(caches.open(CACHE_NAME).then(function(c) { return c.addAll(OFFLINE_URLS); }).then(function() { return self.skipWaiting(); })); });
 self.addEventListener("activate", function(e) { e.waitUntil(caches.keys().then(function(n) { return Promise.all(n.filter(function(k) { return k !== CACHE_NAME; }).map(function(k) { return caches.delete(k); })); }).then(function() { return self.clients.claim(); })); });
@@ -257,13 +276,14 @@ SWEOF
   <title>团队聊天室</title>
   <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html{touch-action:manipulation;-webkit-text-size-adjust:100%}
+html{touch-action:manipulation;-webkit-text-size-adjust:100%;height:100%;background:#f0f2f5}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#f0f2f5;height:100dvh;overflow:hidden}
 #app{height:100dvh;display:flex;flex-direction:column}
+:root{--sat:env(safe-area-inset-top,0px);--sar:env(safe-area-inset-right,0px);--sab:env(safe-area-inset-bottom,0px);--sal:env(safe-area-inset-left,0px)}
 .hidden{display:none!important}
 
 /* ===== Login ===== */
-.login-page{width:100%;height:100dvh;display:flex;justify-content:center;align-items:center;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);position:relative;overflow:hidden}
+.login-page{width:100%;height:100dvh;display:flex;justify-content:center;align-items:center;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);position:relative;overflow:hidden;padding:var(--sat) var(--sar) var(--sab) var(--sal)}
 .login-card{background:#fff;padding:40px;border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.2);width:90%;max-width:400px;position:relative;z-index:1}
 .login-card h1{text-align:center;margin-bottom:30px;color:#333}
 .login-card input{width:100%;padding:14px;margin-bottom:16px;border:1px solid #ddd;border-radius:8px;font-size:16px}
@@ -274,7 +294,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .reg-toggle a{color:#667eea;text-decoration:none}
 
 /* ===== App Layout (三栏) ===== */
-.app-layout{display:flex;height:100dvh;overflow:hidden}
+.app-layout{display:flex;height:100dvh;overflow:hidden;padding:var(--sat) var(--sar) var(--sab) var(--sal);background:#f0f2f5}
 
 /* Sidebar - 频道列表 */
 .sidebar{width:260px;background:#1e1f2e;color:#fff;display:flex;flex-direction:column;flex-shrink:0;transition:transform .3s ease;z-index:100}
@@ -435,7 +455,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
   .members-panel{display:none}
 }
 @media(max-width:768px){
-  .sidebar{position:fixed;top:0;left:0;height:100%;transform:translateX(-100%)}
+  .sidebar{position:fixed;top:var(--sat);left:var(--sal);height:calc(100dvh - var(--sat) - var(--sab));transform:translateX(-100%)}
   .sidebar.open{transform:translateX(0)}
   .sidebar-overlay.show{display:block}
   .chat-header-left .menu-btn{display:block}
@@ -452,7 +472,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <div id="app"></div>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-<script src="/app.js?v=20260414"></script>
+<script src="/app.js?v=20260523-security"></script>
 </body>
 </html>
 HTMLEOF
@@ -478,12 +498,21 @@ function sanitize(html){
   const t=document.createElement('div');t.innerHTML=html;
   t.querySelectorAll('script,style,link,meta,iframe,object,embed').forEach(e=>e.remove());
   const ok={B:1,STRONG:1,I:1,EM:1,U:1,S:1,STRIKE:1,SPAN:1,FONT:1,BR:1,A:1};
-  const okA={style:1,color:1,href:1,target:1,rel:1};
-  (function w(n){[...n.childNodes].forEach(c=>{if(c.nodeType===1){if(!ok[c.tagName]){while(c.firstChild)c.parentNode.insertBefore(c.firstChild,c);c.remove()}else{[...c.attributes].forEach(a=>{if(!okA[a.name])c.removeAttribute(a.name)});if(c.tagName==='A'){c.setAttribute('target','_blank');c.setAttribute('rel','noopener')}w(c)}}});})(t);
+  const okA={color:1,href:1,target:1,rel:1};
+  function safeHref(h){try{const u=new URL(h,location.origin);return ['http:','https:','mailto:','tel:'].includes(u.protocol)}catch(e){return false}}
+  (function w(n){[...n.childNodes].forEach(c=>{if(c.nodeType===1){if(!ok[c.tagName]){while(c.firstChild)c.parentNode.insertBefore(c.firstChild,c);c.remove()}else{[...c.attributes].forEach(a=>{const an=a.name.toLowerCase();if(!okA[an])c.removeAttribute(a.name)});if(c.tagName==='A'){const href=c.getAttribute('href')||'';if(!safeHref(href))c.removeAttribute('href');c.setAttribute('target','_blank');c.setAttribute('rel','noopener noreferrer')}w(c)}}});})(t);
   const tw=document.createTreeWalker(t,NodeFilter.SHOW_TEXT,null,false);const tn=[];while(tw.nextNode())tn.push(tw.currentNode);
   tn.forEach(n=>{if(n.parentNode&&n.parentNode.tagName==='A')return;const re=/(https?:\/\/[^\s<]+)/g;if(re.test(n.textContent)){const f=document.createDocumentFragment();let li=0;n.textContent.replace(re,(m,_,o)=>{if(o>li)f.appendChild(document.createTextNode(n.textContent.slice(li,o)));const a=document.createElement('a');a.href=m;a.target='_blank';a.rel='noopener';a.textContent=m;f.appendChild(a);li=o+m.length;});if(li<n.textContent.length)f.appendChild(document.createTextNode(n.textContent.slice(li)));n.parentNode.replaceChild(f,n);}});
   return t.innerHTML;
 }
+const fileBlobUrls=reactive({}),fileBlobLoading=new Set();
+async function loadFileBlob(m){
+  if(!m||fileBlobUrls[m.id]||fileBlobLoading.has(m.id))return;
+  fileBlobLoading.add(m.id);
+  try{const r=await fetch(API+'/api/files/'+encodeURIComponent(m.id),{headers:authH(),'cache':'no-store'});if(r.ok)fileBlobUrls[m.id]=URL.createObjectURL(await r.blob())}catch(e){}
+  fileBlobLoading.delete(m.id);
+}
+function imageSrc(m){if(m&&!fileBlobUrls[m.id])loadFileBlob(m);return m?(fileBlobUrls[m.id]||''):''}
 
 /* ===== Global reactive store ===== */
 const store=reactive({
@@ -513,10 +542,11 @@ let socket=null;
 function initSocket(){
   if(socket){socket.disconnect();socket=null}
   socket=io({auth:{token:store.token}});
+  socket.on('connect',()=>{if(store.currentChannelId){socket.emit('switchChannel',{channelId:store.currentChannelId});scheduleChatRefresh(80)}});
+  socket.io.on('reconnect',()=>scheduleChatRefresh(120));
   socket.on('connect_error',e=>{if(e.message==='认证失败'||e.message==='未提供认证信息'){alert('登录已过期');clearAuth()}});
   socket.on('newMessage',msg=>{
-    if(!msgStore[msg.channel_id])msgStore[msg.channel_id]={msgs:[],oldest:null,allLoaded:false};
-    const ch=msgStore[msg.channel_id];
+    const ch=ensureMsgChannel(msg.channel_id);
     if(!ch.msgs.find(m=>m.id===msg.id)){ch.msgs.push(msg);if(msg.channel_id===store.currentChannelId)nextTick(()=>scrollBottom())}
     if(msg.channel_id!==store.currentChannelId&&msg.username!==store.username){
       const c=store.channels.find(c=>c.id===msg.channel_id);if(c)c._unread=(c._unread||0)+1;
@@ -539,29 +569,63 @@ function initSocket(){
 }
 
 /* ===== Message store (per channel) ===== */
-const msgStore=Vue.reactive({});
-async function loadMessages(channelId,before){
-  if(!channelId)return;
+const msgStore=reactive({});
+function ensureMsgChannel(channelId){
   if(!msgStore[channelId])msgStore[channelId]={msgs:[],oldest:null,allLoaded:false};
-  const ch=msgStore[channelId];if(ch.allLoaded&&before)return;
+  return msgStore[channelId];
+}
+function mergeMessages(channelId,msgs,prepend){
+  const ch=ensureMsgChannel(channelId);
+  const seen=new Set(ch.msgs.map(m=>m.id));
+  const fresh=msgs.filter(m=>!seen.has(m.id));
+  if(!fresh.length)return ch;
+  if(prepend)ch.msgs.unshift(...fresh);else ch.msgs.push(...fresh);
+  ch.msgs.sort((a,b)=>a.id-b.id);
+  ch.oldest=ch.msgs.length?ch.msgs[0].id:null;
+  return ch;
+}
+async function loadMessages(channelId,before,force){
+  if(!channelId)return;
+  const ch=ensureMsgChannel(channelId);if(ch.allLoaded&&before&&!force)return;
   let url=API+'/api/messages?channelId='+channelId+'&limit=50';
+  if(!before&&force&&ch.msgs.length)url=API+'/api/messages?channelId='+channelId+'&limit=200&after='+ch.msgs[ch.msgs.length-1].id;
   if(before&&ch.oldest)url+='&before='+ch.oldest;
   try{
-    const r=await fetch(url,{headers:authH()});if(r.status===401){clearAuth();return}
+    const r=await fetch(url,{headers:authH(),'cache':'no-store'});if(r.status===401){clearAuth();return}
     if(r.status===403)return;
     const msgs=await r.json();
-    if(msgs.length<50)ch.allLoaded=true;
-    if(msgs.length){
-      if(before){ch.msgs.unshift(...msgs)}else{ch.msgs.push(...msgs)}
-      ch.oldest=ch.msgs[0].id;
-    }
+    if(before&&msgs.length<50)ch.allLoaded=true;
+    if(!before&&msgs.length<50&&!ch.msgs.length)ch.allLoaded=true;
+    if(msgs.length)return mergeMessages(channelId,msgs,before),msgs.length;
+    return 0;
   }catch(e){console.error('loadMessages:',e)}
+  return 0;
 }
 function scrollBottom(){const el=document.querySelector('.messages');if(el)el.scrollTop=el.scrollHeight}
+let refreshPromise=null,refreshTimer=null;
+async function refreshCurrentChannel(){
+  if(!store.token)return;
+  if(refreshPromise)return refreshPromise;
+  refreshPromise=(async()=>{
+    await loadChannels();
+    if(!store.currentChannelId&&store.channels.length)store.currentChannelId=store.channels[0].id;
+    if(store.currentChannelId){
+      let loops=0,got=0;
+      do{got=await loadMessages(store.currentChannelId,false,true);loops++}while(got===200&&loops<10);
+      if(socket&&socket.connected)socket.emit('switchChannel',{channelId:store.currentChannelId});
+      await nextTick();scrollBottom();
+    }
+  })().finally(()=>{refreshPromise=null});
+  return refreshPromise;
+}
+function scheduleChatRefresh(delay){
+  clearTimeout(refreshTimer);
+  refreshTimer=setTimeout(()=>refreshCurrentChannel().catch(()=>{}),delay||0);
+}
 
 /* ===== Channel operations ===== */
 async function loadChannels(){
-  try{const r=await fetch(API+'/api/channels',{headers:authH()});if(r.ok){const chs=await r.json();store.channels=chs.map(c=>({...c,_unread:0}))}}catch(e){}
+  try{const r=await fetch(API+'/api/channels',{headers:authH(),'cache':'no-store'});if(r.ok){const unread=new Map(store.channels.map(c=>[c.id,c._unread||0]));const chs=await r.json();store.channels=chs.map(c=>({...c,_unread:unread.get(c.id)||0}))}}catch(e){}
 }
 async function switchChannel(id){
   store.currentChannelId=id;localStorage.setItem('currentChannelId',id);
@@ -611,7 +675,13 @@ async function togglePush(){
 }
 
 /* ===== Kicked overlay ===== */
-function showKicked(msg){if(socket){socket.disconnect();socket=null}const o=document.createElement('div');o.className='kicked-overlay';o.innerHTML='<div class="kicked-card"><h3>⚠️ 账号已下线</h3><p>'+esc(msg)+'</p><button onclick="this.closest(\'.kicked-overlay\').remove();clearAuth();appInstance.page=\'login\'">重新登录</button></div>';document.body.appendChild(o)}
+function showKicked(msg){
+  if(socket){socket.disconnect();socket=null}
+  const o=document.createElement('div');o.className='kicked-overlay';
+  o.innerHTML='<div class="kicked-card"><h3>⚠️ 账号已下线</h3><p>'+esc(msg)+'</p><button type="button">重新登录</button></div>';
+  o.querySelector('button').addEventListener('click',()=>{o.remove();clearAuth();if(appInstance&&appInstance.page)appInstance.page.value='login'});
+  document.body.appendChild(o);
+}
 
 /* ===== Vue App ===== */
 let appInstance=null;
@@ -627,14 +697,6 @@ const App={
     const replyTo=ref(null);
     const noticeExpanded=ref(false);
     const msgInput=ref('');
-    const loginUser=ref('');
-    const loginPass=ref('');
-    const regUser=ref('');
-    const regNick=ref('');
-    const regPass=ref('');
-    const regPass2=ref('');
-    const chainTopic=ref('');
-    const chainDesc=ref('');
     const msgListKey=ref(0);/* force re-render */
 
     const currentChannel=computed(()=>store.channels.find(c=>c.id===store.currentChannelId)||null);
@@ -645,13 +707,36 @@ const App={
       return store.onlineUsers.map(u=>({...u,isOnline:true,role:mems.find(m=>m.username===u.username)?.role||'member'}));
     });
 
+    function handleAppWake(){
+      if(page.value==='chat'&&!document.hidden)scheduleChatRefresh(80);
+    }
+    function handleChainButton(e){
+      const b=e.target.closest('.chain-join-btn[data-chain-id]');if(!b)return;
+      const id=parseInt(b.dataset.chainId);const ch=msgStore[store.currentChannelId];if(!ch)return;
+      const m=ch.msgs.find(m=>m.id===id);if(m)joinChain(m);
+    }
+
     /* Init */
     onMounted(async()=>{
+      document.addEventListener('visibilitychange',handleAppWake);
+      document.addEventListener('click',handleChainButton);
+      window.addEventListener('pageshow',handleAppWake);
+      window.addEventListener('focus',handleAppWake);
+      window.addEventListener('online',handleAppWake);
       await initSW();await loadAppearance();
       try{const r=await fetch(API+'/api/settings/notice');if(r.ok){const d=await r.json();store.notice=d}}catch(e){}
       try{const r=await fetch(API+'/api/settings/registration');if(r.ok){const d=await r.json();store.regOpen=d.open}}catch(e){}
       if(store.token){await enterChat()}
       appInstance={page};
+    });
+    onUnmounted(()=>{
+      document.removeEventListener('visibilitychange',handleAppWake);
+      document.removeEventListener('click',handleChainButton);
+      window.removeEventListener('pageshow',handleAppWake);
+      window.removeEventListener('focus',handleAppWake);
+      window.removeEventListener('online',handleAppWake);
+      Object.values(fileBlobUrls).forEach(u=>URL.revokeObjectURL(u));
+      clearTimeout(refreshTimer);
     });
 
     async function enterChat(){
@@ -717,11 +802,10 @@ const App={
     function setReply(msg){replyTo.value=msg;ctxMenu.value=null;document.querySelector('.input-area textarea')?.focus()}
 
     return{page,loginErr,showReg,sidebarOpen,showMembers,currentModal,modalData,replyTo,noticeExpanded,msgInput,msgListKey,
-      loginUser,loginPass,regUser,regNick,regPass,regPass2,chainTopic,chainDesc,
       currentChannel,currentMessages,onlineSet,channelMembers,ctxMenu,
       doLogin,doRegister,logout,sendMsg,handleKey,insertNewline,autoGrow,uploadFile,sendChain,joinChain,parseChain,loadMore,showCtx,setReply,
       switchChannel:async(id)=>{sidebarOpen.value=false;await switchChannel(id)},
-      store,msgStore,API,esc,fmtTime,fmtSize,avatarUrl,sanitize,
+      store,msgStore,API,esc,fmtTime,fmtSize,avatarUrl,imageSrc,sanitize,
       togglePush,checkPush}
   },
   template:`
@@ -729,14 +813,14 @@ const App={
   <div class="login-card">
     <h1 id="loginTitle">{{store.appearance.login_title||'团队聊天室'}}</h1>
     <div v-if="!showReg">
-      <input v-model="loginUser" type="text" placeholder="用户名" @keyup.enter="$refs.lp?.focus()">
-      <input ref="lp" v-model="loginPass" type="password" placeholder="密码" @keyup.enter="doLogin(loginUser,loginPass)">
-      <button @click="doLogin(loginUser,loginPass)">登录</button>
+      <input id="lu" type="text" placeholder="用户名" @keyup.enter="$refs.lp?.focus()">
+      <input ref="lp" id="lpp" type="password" placeholder="密码" @keyup.enter="doLogin(document.getElementById('lu').value,document.getElementById('lpp').value)">
+      <button @click="doLogin(document.getElementById('lu').value,document.getElementById('lpp').value)">登录</button>
     </div>
     <div v-else>
-      <input v-model="regUser" type="text" placeholder="用户名"><input v-model="regNick" type="text" placeholder="昵称 (选填)">
-      <input v-model="regPass" type="password" placeholder="密码 (至少6位)"><input v-model="regPass2" type="password" placeholder="确认密码">
-      <button @click="doRegister(regUser,regPass,regPass2,regNick)">注册</button>
+      <input id="ru" type="text" placeholder="用户名"><input id="rn" type="text" placeholder="昵称 (选填)">
+      <input id="rp" type="password" placeholder="密码 (至少6位)"><input id="rp2" type="password" placeholder="确认密码">
+      <button @click="doRegister(document.getElementById('ru').value,document.getElementById('rp').value,document.getElementById('rp2').value,document.getElementById('rn').value)">注册</button>
     </div>
     <p v-if="loginErr" class="error" :style="{color:loginErr.startsWith('✅')?'#10b981':'#dc2626'}">{{loginErr}}</p>
     <p v-if="store.regOpen" class="reg-toggle"><a href="#" @click.prevent="showReg=!showReg;loginErr=''">{{showReg?'已有账号？去登录':'还没有账号？注册一个'}}</a></p>
@@ -800,8 +884,8 @@ const App={
               <div v-if="m.reply_to" class="reply-ref">{{getReplyPreview(m.reply_to)}}</div>
               <div v-if="m.type==='text'&&m.content&&m.content.startsWith('[CHAIN]')" v-html="renderChain(m)"></div>
               <div v-else-if="m.type==='text'" class="msg-content" v-html="sanitize(m.content)"></div>
-              <img v-else-if="m.type==='image'" class="chat-image" :src="API+'/uploads/'+encodeURIComponent(m.file_path)" :alt="m.file_name" @click="currentModal='imagePreview';modalData={src:API+'/uploads/'+encodeURIComponent(m.file_path)}">
-              <div v-else-if="m.type==='file'" class="file-card" @click="downloadFile(API+'/uploads/'+encodeURIComponent(m.file_path),m.file_name)">📄 {{m.file_name}} ({{fmtSize(m.file_size)}})</div>
+              <img v-else-if="m.type==='image'" class="chat-image" :src="imageSrc(m)" :alt="m.file_name" @click="currentModal='imagePreview';modalData={src:imageSrc(m)}">
+              <div v-else-if="m.type==='file'" class="file-card" @click="downloadFile(m)">📄 {{m.file_name}} ({{fmtSize(m.file_size)}})</div>
               <div class="msg-time">{{fmtTime(m.created_at)}}</div>
             </div>
           </div>
@@ -978,9 +1062,9 @@ const App={
 <!-- Chain modal -->
 <div v-if="currentModal==='chainNew'" class="modal-overlay" @click.self="currentModal=''">
   <div class="modal" style="max-width:400px"><h3>🚂 发起接龙</h3>
-    <label class="field-label">接龙话题</label><input v-model="chainTopic" type="text" placeholder="例如：明天团建午餐吃什么？">
-    <label class="field-label">补充说明 (选填)</label><textarea v-model="chainDesc" rows="2" placeholder="规则、选项等..."></textarea>
-    <div style="display:flex;gap:10px;margin-top:10px"><button class="secondary" style="flex:1" @click="currentModal=''">取消</button><button style="flex:1" @click="sendChain(chainTopic.trim(),chainDesc.trim())">发起</button></div>
+    <label class="field-label">接龙话题</label><input id="chainTopic" type="text" placeholder="例如：明天团建午餐吃什么？">
+    <label class="field-label">补充说明 (选填)</label><textarea id="chainDesc" rows="2" placeholder="规则、选项等..."></textarea>
+    <div style="display:flex;gap:10px;margin-top:10px"><button class="secondary" style="flex:1" @click="currentModal=''">取消</button><button style="flex:1" @click="sendChain(document.getElementById('chainTopic').value.trim(),document.getElementById('chainDesc').value.trim())">发起</button></div>
   </div>
 </div>
 `,
@@ -1000,10 +1084,10 @@ const App={
       if(d.participants&&d.participants.length){h+='<div class="chain-list">';d.participants.forEach(p=>{h+='<div><span class="chain-seq">'+p.seq+'</span><span class="chain-name">'+esc(p.name)+'</span>'+(p.text?' '+esc(p.text):'')+'</div>'});h+='</div>'}
       const joined=d.participants&&d.participants.some(p=>p.username===store.username);
       if(joined)h+='<button class="chain-join-btn joined" disabled>✅ 已参与</button>';
-      else h+='<button class="chain-join-btn" onclick="document.querySelector(\'#app\').__vue_app__.config.globalProperties.$root.joinChainById('+msg.id+')">🙋 参与接龙</button>';
+      else h+='<button class="chain-join-btn" data-chain-id="'+msg.id+'">🙋 参与接龙</button>';
       return h+'</div>';
     },
-    downloadFile(url,name){const a=document.createElement('a');a.href=url;a.download=name;a.click()},
+    async downloadFile(m){try{const r=await fetch(API+'/api/files/'+encodeURIComponent(m.id),{headers:authH()});if(!r.ok)return alert('下载失败');const bl=await r.blob();const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download=m.file_name||'download';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}catch(e){alert('下载失败')}},
     joinChainById(id){const ch=msgStore[store.currentChannelId];if(!ch)return;const m=ch.msgs.find(m=>m.id===id);if(m)this.joinChain(m)},
     /* Admin methods */
     async loadUsers(){try{const r=await fetch(API+'/api/users',{headers:authH()});if(r.ok)this.modalData.users=await r.json()}catch(e){}},
@@ -1090,12 +1174,12 @@ const App={
 /* iOS PWA keyboard fix */
 (function(){if(!/iPad|iPhone|iPod/.test(navigator.userAgent))return;document.addEventListener('focusout',function(e){setTimeout(function(){window.scrollTo(0,0)},100)});if(window.visualViewport){var lh=window.visualViewport.height;window.visualViewport.addEventListener('resize',function(){var nh=window.visualViewport.height;if(nh>lh){setTimeout(function(){window.scrollTo(0,0)},50)}lh=nh})}})();
 
-/* Mount Vue app (Vue 3 loaded from HTML) */
+/* Mount Vue app */
 (function(){
   const app=Vue.createApp(App);
   app.config.globalProperties.$root=app._instance?.proxy;
   app.mount('#app');
-  Vue.nextTick(()=>applyAppearance(store.appearance));
+  nextTick(()=>applyAppearance(store.appearance));
 })();
 APPEOF
 
@@ -1111,12 +1195,10 @@ APPEOF
   "dependencies": {
     "better-sqlite3": "^9.2.2",
     "bcryptjs": "^2.4.3",
-    "cors": "^2.8.5",
     "express": "^4.18.2",
     "jsonwebtoken": "^9.0.2",
     "multer": "^1.4.5-lts.1",
     "socket.io": "^4.7.2",
-    "uuid": "^9.0.0",
     "web-push": "^3.6.6"
   }
 }
@@ -1129,10 +1211,8 @@ const http = require("http");
 const { Server } = require("socket.io");
 const Database = require("better-sqlite3");
 const multer = require("multer");
-const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
-const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -1140,7 +1220,7 @@ const webpush = require("web-push");
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*", methods: ["GET", "POST"] } });
+const io = new Server(server);
 
 /* ===== Secrets ===== */
 const SECRET_FILE = path.join(__dirname, ".jwt_secret");
@@ -1207,27 +1287,36 @@ const insSetting = db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUE
 for (const [k, v] of Object.entries(defaultSettings)) insSetting.run(k, v);
 
 /* ===== Middleware & Helpers ===== */
-app.use(cors());
 app.use(express.json({ limit: "5mb" }));
 app.get("/sw.js", (req, res) => { res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate"); res.setHeader("Content-Type", "application/javascript"); res.sendFile(path.join(__dirname, "public", "sw.js")); });
 app.get("/manifest.json", (req, res) => { res.setHeader("Cache-Control", "no-cache"); res.setHeader("Content-Type", "application/manifest+json"); res.sendFile(path.join(__dirname, "public", "manifest.json")); });
 app.use(express.static(path.join(__dirname, "public")));
-app.use("/uploads", express.static(UPLOAD_DIR));
 app.use("/avatars", express.static(AVATAR_DIR));
 app.use("/backgrounds", express.static(BG_DIR));
 
 function getSetting(k) { const r = db.prepare("SELECT value FROM settings WHERE key=?").get(k); return r ? r.value : (defaultSettings[k] || ""); }
 function setSetting(k, v) { db.prepare("INSERT OR REPLACE INTO settings (key,value,updated_at) VALUES (?,?,datetime('now'))").run(k, v); }
 function normalizeToUTC(ts) { if (!ts) return ts; if (ts.endsWith("Z") || /[+-]\d{2}:\d{2}$/.test(ts)) return ts; return ts.replace(" ", "T") + "Z"; }
+function newFileId() { return crypto.randomUUID(); }
+function safeDeleteFile(file) { try { if (file && file.path) fs.unlinkSync(file.path); } catch(e) {} }
 
+function verifyToken(token) {
+  if (!token) throw new Error("missing token");
+  const decoded = jwt.verify(token, JWT_SECRET);
+  const user = db.prepare("SELECT last_login_at FROM users WHERE id = ?").get(decoded.userId);
+  if (user && user.last_login_at && decoded.loginAt && user.last_login_at !== decoded.loginAt) throw new Error("stale login");
+  return decoded;
+}
 function authMiddleware(req, res, next) {
   const token = req.headers.authorization?.split(" ")[1];
-  if (!token) return res.status(401).json({ success: false, message: "未提供认证信息" });
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const user = db.prepare("SELECT last_login_at FROM users WHERE id = ?").get(decoded.userId);
-    if (user && user.last_login_at && decoded.loginAt && user.last_login_at !== decoded.loginAt) return res.status(401).json({ success: false, message: "账号已在其他设备登录" });
-    req.user = decoded; next();
+    req.user = verifyToken(token); next();
+  } catch(e) { res.status(401).json({ success: false, message: token ? "认证失败" : "未提供认证信息" }); }
+}
+function fileAuthMiddleware(req, res, next) {
+  const token = req.headers.authorization?.split(" ")[1];
+  try {
+    req.user = verifyToken(token); next();
   } catch(e) { res.status(401).json({ success: false, message: "认证失败" }); }
 }
 function adminMiddleware(req, res, next) { if (!req.user.isAdmin) return res.status(403).json({ success: false, message: "需要管理员权限" }); next(); }
@@ -1256,13 +1345,13 @@ function canWriteChannel(userId, channelId) {
 /* File upload configs */
 const ALLOWED_EXT = [".jpg",".jpeg",".png",".gif",".webp",".bmp",".pdf",".doc",".docx",".xls",".xlsx",".ppt",".pptx",".txt",".csv",".zip",".rar",".7z",".mp3",".mp4",".mov"];
 function fixFilename(file) { try { const raw=file.originalname; let h=false; for(let i=0;i<raw.length;i++){if(raw.charCodeAt(i)>127){h=true;break}} if(!h)return; const buf=Buffer.from(raw,"latin1"); const dec=buf.toString("utf8"); if(!dec.includes("\ufffd"))file.originalname=dec; } catch(e) {} }
-const storage = multer.diskStorage({ destination:(r,f,cb)=>cb(null,UPLOAD_DIR), filename:(r,f,cb)=>{fixFilename(f);cb(null,uuidv4()+path.extname(f.originalname).toLowerCase())} });
+const storage = multer.diskStorage({ destination:(r,f,cb)=>cb(null,UPLOAD_DIR), filename:(r,f,cb)=>{fixFilename(f);cb(null,newFileId()+path.extname(f.originalname).toLowerCase())} });
 function fileFilter(r,f,cb){fixFilename(f);const ext=path.extname(f.originalname).toLowerCase();cb(ALLOWED_EXT.includes(ext)?null:new Error("不支持的文件类型"),ALLOWED_EXT.includes(ext))}
 const upload = multer({storage,limits:{fileSize:50*1024*1024},fileFilter,defParamCharset:"utf8"});
-const avatarStorage = multer.diskStorage({ destination:(r,f,cb)=>cb(null,AVATAR_DIR), filename:(r,f,cb)=>{fixFilename(f);cb(null,uuidv4()+path.extname(f.originalname).toLowerCase())} });
+const avatarStorage = multer.diskStorage({ destination:(r,f,cb)=>cb(null,AVATAR_DIR), filename:(r,f,cb)=>{fixFilename(f);cb(null,newFileId()+path.extname(f.originalname).toLowerCase())} });
 const uploadAvatar = multer({storage:avatarStorage,limits:{fileSize:5*1024*1024},fileFilter:(r,f,cb)=>{fixFilename(f);const ext=path.extname(f.originalname).toLowerCase();cb([".jpg",".jpeg",".png",".gif",".webp"].includes(ext)?null:new Error("头像只支持图片"),[".jpg",".jpeg",".png",".gif",".webp"].includes(ext))},defParamCharset:"utf8"});
-const bgStorage = multer.diskStorage({ destination:(r,f,cb)=>cb(null,BG_DIR), filename:(r,f,cb)=>{fixFilename(f);cb(null,uuidv4()+path.extname(f.originalname).toLowerCase())} });
-const uploadBg = multer({storage:bgStorage,limits:{fileSize:100*1024*1024},fileFilter:(r,f,cb)=>{fixFilename(f);const ext=path.extname(f.originalname).toLowerCase();const ok=[".jpg",".jpeg",".png",".gif",".webp",".bmp",".svg",".mp4",".mov",".webm",".m4v"].includes(ext);cb(ok?null:new Error("背景只支持图片或视频"),ok)},defParamCharset:"utf8"});
+const bgStorage = multer.diskStorage({ destination:(r,f,cb)=>cb(null,BG_DIR), filename:(r,f,cb)=>{fixFilename(f);cb(null,newFileId()+path.extname(f.originalname).toLowerCase())} });
+const uploadBg = multer({storage:bgStorage,limits:{fileSize:100*1024*1024},fileFilter:(r,f,cb)=>{fixFilename(f);const ext=path.extname(f.originalname).toLowerCase();const ok=[".jpg",".jpeg",".png",".gif",".webp",".bmp",".mp4",".mov",".webm",".m4v"].includes(ext);cb(ok?null:new Error("背景只支持图片或视频"),ok)},defParamCharset:"utf8"});
 
 /* ===== Push ===== */
 app.get("/api/push/vapid-key", (req, res) => { res.json({ publicKey: vapidKeys.publicKey }); });
@@ -1285,6 +1374,34 @@ function sendPushToOthers(senderUserId, senderName, messageText, channelId) {
   for (const sub of subs) {
     webpush.sendNotification({ endpoint: sub.endpoint, keys: { p256dh: sub.keys_p256dh, auth: sub.keys_auth } }, payload, { TTL: 86400, urgency: "high", topic: "teamchat-msg" }).catch(err => { if (err.statusCode === 410 || err.statusCode === 404) db.prepare("DELETE FROM push_subscriptions WHERE id=?").run(sub.id); });
   }
+}
+
+const onlineUsers = new Map(), userSocketMap = new Map();
+function joinUserChannel(userId, channelId) {
+  const sid = userSocketMap.get(userId);
+  const s = sid ? io.sockets.sockets.get(sid) : null;
+  if (s) s.join("ch:" + channelId);
+}
+function leaveUserChannel(userId, channelId) {
+  const sid = userSocketMap.get(parseInt(userId));
+  const s = sid ? io.sockets.sockets.get(sid) : null;
+  if (s) s.leave("ch:" + channelId);
+}
+function emitToUser(userId, event, payload) {
+  const sid = userSocketMap.get(parseInt(userId));
+  const s = sid ? io.sockets.sockets.get(sid) : null;
+  if (s) s.emit(event, payload);
+}
+function joinAllSocketsToChannel(channelId) {
+  for (const s of io.sockets.sockets.values()) s.join("ch:" + channelId);
+}
+function sanitizeMessageContent(input) {
+  let s = String(input || "").trim().substring(0, 10000);
+  s = s.replace(/<(script|style|iframe|object|embed|link|meta)[^>]*>[\s\S]*?<\/\1>/gi, "");
+  s = s.replace(/<(script|style|iframe|object|embed|link|meta)[^>]*\/?>/gi, "");
+  s = s.replace(/\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+  s = s.replace(/\s+(href|src)\s*=\s*("\s*(javascript|data|vbscript):[^"]*"|'\s*(javascript|data|vbscript):[^']*'|\s*(javascript|data|vbscript):[^\s>]*)/gi, ' $1="#"');
+  return s;
 }
 
 /* ===== Auth Routes ===== */
@@ -1350,9 +1467,10 @@ app.post("/api/channels", authMiddleware, adminMiddleware, (req, res) => {
     /* Add creator as owner */
     db.prepare("INSERT INTO channel_members (channel_id, user_id, role) VALUES (?, ?, 'owner')").run(chId, req.user.userId);
     /* For public channels, add all users */
-    if (!is_private) { db.prepare("SELECT id FROM users").all().forEach(u => { if (u.id !== req.user.userId) db.prepare("INSERT OR IGNORE INTO channel_members (channel_id,user_id,role) VALUES (?,?,'member')").run(chId, u.id); }); }
+    if (!is_private) { db.prepare("SELECT id FROM users").all().forEach(u => { if (u.id !== req.user.userId) db.prepare("INSERT OR IGNORE INTO channel_members (channel_id,user_id,role) VALUES (?,?,'member')").run(chId, u.id); }); joinAllSocketsToChannel(chId); }
+    else joinUserChannel(req.user.userId, chId);
     const ch = db.prepare("SELECT * FROM channels WHERE id=?").get(chId);
-    io.emit("channelCreated", ch);
+    if (is_private) io.to("ch:" + chId).emit("channelCreated", ch); else io.emit("channelCreated", ch);
     res.json({ success: true, channel: ch });
   } catch(e) { res.json({ success: false, message: "创建失败" }); }
 });
@@ -1364,38 +1482,45 @@ app.delete("/api/channels/:id", authMiddleware, adminMiddleware, (req, res) => {
   db.prepare("DELETE FROM messages WHERE channel_id=?").run(ch.id);
   db.prepare("DELETE FROM channel_members WHERE channel_id=?").run(ch.id);
   db.prepare("DELETE FROM channels WHERE id=?").run(ch.id);
-  io.emit("channelDeleted", { channelId: ch.id });
+  io.to("ch:" + ch.id).emit("channelDeleted", { channelId: ch.id });
   res.json({ success: true });
 });
 
 app.get("/api/channels/:id/members", authMiddleware, (req, res) => {
+  if (!canAccessChannel(req.user.userId, parseInt(req.params.id))) return res.status(403).json({ success: false, message: "无权访问此频道" });
   res.json(db.prepare("SELECT cm.*, u.username, u.nickname, u.avatar FROM channel_members cm JOIN users u ON cm.user_id = u.id WHERE cm.channel_id = ?").all(req.params.id));
 });
 
 app.post("/api/channels/:id/members", authMiddleware, adminMiddleware, (req, res) => {
   const { username, role } = req.body; const user = db.prepare("SELECT id FROM users WHERE username=?").get(username);
   if (!user) return res.json({ success: false, message: "用户不存在" });
-  try { db.prepare("INSERT OR REPLACE INTO channel_members (channel_id, user_id, role) VALUES (?, ?, ?)").run(req.params.id, user.id, role || 'member'); io.emit("membershipChanged", {}); res.json({ success: true }); } catch(e) { res.json({ success: false, message: "添加失败" }); }
+  const safeRole = ["owner","admin","member","viewer"].includes(role) ? role : "member";
+  try { db.prepare("INSERT OR REPLACE INTO channel_members (channel_id, user_id, role) VALUES (?, ?, ?)").run(req.params.id, user.id, safeRole); joinUserChannel(user.id, req.params.id); io.to("ch:" + req.params.id).emit("membershipChanged", {}); emitToUser(user.id, "membershipChanged", {}); res.json({ success: true }); } catch(e) { res.json({ success: false, message: "添加失败" }); }
 });
 
 app.put("/api/channels/:id/members/:userId", authMiddleware, adminMiddleware, (req, res) => {
   const { role } = req.body;
+  if (!["owner","admin","member","viewer"].includes(role)) return res.json({ success: false, message: "角色无效" });
   db.prepare("UPDATE channel_members SET role=? WHERE channel_id=? AND user_id=?").run(role, req.params.id, req.params.userId);
-  io.emit("membershipChanged", {}); res.json({ success: true });
+  io.to("ch:" + req.params.id).emit("membershipChanged", {}); emitToUser(req.params.userId, "membershipChanged", {}); res.json({ success: true });
 });
 
 app.delete("/api/channels/:id/members/:userId", authMiddleware, adminMiddleware, (req, res) => {
+  emitToUser(req.params.userId, "membershipChanged", {});
+  leaveUserChannel(req.params.userId, req.params.id);
   db.prepare("DELETE FROM channel_members WHERE channel_id=? AND user_id=?").run(req.params.id, req.params.userId);
-  io.emit("membershipChanged", {}); res.json({ success: true });
+  io.to("ch:" + req.params.id).emit("membershipChanged", {}); res.json({ success: true });
 });
 
 /* ===== Message Routes ===== */
 app.get("/api/messages", authMiddleware, (req, res) => {
-  const { before, limit = 50, channelId } = req.query;
+  const { before, after, limit = 50, channelId } = req.query;
   const chId = parseInt(channelId) || 1;
   if (!canAccessChannel(req.user.userId, chId)) return res.status(403).json({ success: false, message: "无权访问此频道" });
   const pl = Math.min(Math.max(parseInt(limit) || 50, 1), 200);
   let sql = "SELECT m.*,u.nickname,u.avatar FROM messages m JOIN users u ON m.user_id=u.id WHERE m.channel_id=?"; const params = [chId];
+  const pa = parseInt(after);
+  if (!isNaN(pa) && pa > 0) { sql += " AND m.id > ? ORDER BY m.id ASC LIMIT ?"; params.push(pa, pl); return res.json(db.prepare(sql).all(...params).map(m => { m.created_at = normalizeToUTC(m.created_at); return m; })); }
   if (before) { const pb = parseInt(before); if (!isNaN(pb) && pb > 0) { sql += " AND m.id < ?"; params.push(pb); } }
   sql += " ORDER BY m.id DESC LIMIT ?"; params.push(pl);
   res.json(db.prepare(sql).all(...params).reverse().map(m => { m.created_at = normalizeToUTC(m.created_at); return m; }));
@@ -1404,16 +1529,26 @@ app.get("/api/messages", authMiddleware, (req, res) => {
 app.post("/api/upload", authMiddleware, upload.single("file"), (req, res) => {
   if (!req.file) return res.json({ success: false, message: "上传失败" });
   const channelId = parseInt(req.body.channelId) || 1;
-  if (!canWriteChannel(req.user.userId, channelId)) return res.json({ success: false, message: "无权在此频道发送" });
+  if (!canWriteChannel(req.user.userId, channelId)) { safeDeleteFile(req.file); return res.json({ success: false, message: "无权在此频道发送" }); }
   const type = req.file.mimetype.startsWith("image/") ? "image" : "file";
   const user = db.prepare("SELECT username,nickname,avatar FROM users WHERE id=?").get(req.user.userId);
-  if (!user) return res.json({ success: false, message: "用户不存在" });
+  if (!user) { safeDeleteFile(req.file); return res.json({ success: false, message: "用户不存在" }); }
   const nowUtc = new Date().toISOString();
   const result = db.prepare("INSERT INTO messages (user_id,username,content,type,file_name,file_path,file_size,channel_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)").run(req.user.userId, user.username, "", type, req.file.originalname, req.file.filename, req.file.size, channelId, nowUtc);
   const message = { id: result.lastInsertRowid, username: user.username, nickname: user.nickname, avatar: user.avatar, content: "", type, file_name: req.file.originalname, file_path: req.file.filename, file_size: req.file.size, channel_id: channelId, created_at: nowUtc };
-  io.emit("newMessage", message);
+  io.to("ch:" + channelId).emit("newMessage", message);
   sendPushToOthers(req.user.userId, user.nickname || user.username, type === "image" ? "[图片]" : "[文件] " + req.file.originalname, channelId);
   res.json({ success: true });
+});
+app.get("/api/files/:messageId", fileAuthMiddleware, (req, res) => {
+  const msg = db.prepare("SELECT id,file_name,file_path,type,channel_id FROM messages WHERE id=? AND file_path IS NOT NULL").get(req.params.messageId);
+  if (!msg) return res.status(404).json({ success: false, message: "文件不存在" });
+  if (!canAccessChannel(req.user.userId, msg.channel_id)) return res.status(403).json({ success: false, message: "无权访问此文件" });
+  const fp = path.join(UPLOAD_DIR, path.basename(msg.file_path));
+  if (!fs.existsSync(fp)) return res.status(404).json({ success: false, message: "文件不存在" });
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Content-Disposition", `inline; filename*=UTF-8''${encodeURIComponent(msg.file_name || msg.file_path)}`);
+  res.sendFile(fp);
 });
 
 app.post("/api/upload-avatar", authMiddleware, uploadAvatar.single("avatar"), (req, res) => { if (!req.file) return res.json({ success: false }); db.prepare("UPDATE users SET avatar=? WHERE id=?").run(req.file.filename, req.user.userId); res.json({ success: true, avatar: req.file.filename }); });
@@ -1463,17 +1598,35 @@ app.delete("/api/users/:username", authMiddleware, adminMiddleware, (req, res) =
 app.post("/api/admin/reset-password", authMiddleware, adminMiddleware, async (req, res) => { const { username, newPassword } = req.body; if (!username || !newPassword || newPassword.length < 6) return res.json({ success: false, message: "参数不足" }); db.prepare("UPDATE users SET password=? WHERE username=?").run(await bcrypt.hash(newPassword, 10), username); res.json({ success: true }); });
 
 app.get("/api/backup", authMiddleware, adminMiddleware, (req, res) => { const { startDate, endDate } = req.query; let sql = "SELECT m.*,u.username as user_username,u.nickname,u.avatar FROM messages m JOIN users u ON m.user_id=u.id"; const p = []; if (startDate && endDate) { sql += " WHERE DATE(m.created_at) BETWEEN ? AND ?"; p.push(startDate, endDate); } sql += " ORDER BY m.id"; res.json({ messages: db.prepare(sql).all(...p).map(m => { m.created_at = normalizeToUTC(m.created_at); return m; }) }); });
-app.post("/api/restore", authMiddleware, adminMiddleware, (req, res) => { const { messages } = req.body; if (!Array.isArray(messages)) return res.json({ success: false, message: "格式错误" }); let count = 0; const ins = db.prepare("INSERT INTO messages (user_id,username,content,type,file_name,file_path,file_size,channel_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)"); try { db.transaction(ms => { for (const m of ms) { const u = db.prepare("SELECT id FROM users WHERE username=?").get(m.username); if (u) { ins.run(u.id, m.username, m.content, m.type, m.file_name, m.file_path, m.file_size, m.channel_id || 1, m.created_at); count++; } } })(messages); res.json({ success: true, count }); } catch(e) { res.json({ success: false, message: "恢复失败" }); } });
+app.post("/api/restore", authMiddleware, adminMiddleware, (req, res) => {
+  const { messages } = req.body;
+  if (!Array.isArray(messages) || messages.length > 20000) return res.json({ success: false, message: "格式错误" });
+  let count = 0;
+  const ins = db.prepare("INSERT INTO messages (user_id,username,content,type,file_name,file_path,file_size,channel_id,created_at) VALUES (?,?,?,?,?,?,?,?,?)");
+  try {
+    db.transaction(ms => {
+      for (const m of ms) {
+        const u = db.prepare("SELECT id FROM users WHERE username=?").get(m.username);
+        if (!u) continue;
+        const type = ["text","image","file"].includes(m.type) ? m.type : "text";
+        let content = String(m.content || "").substring(0, 10000);
+        if (type === "text" && !content.startsWith("[CHAIN]")) content = sanitizeMessageContent(content);
+        ins.run(u.id, m.username, content, type, m.file_name || null, m.file_path || null, m.file_size || null, m.channel_id || 1, m.created_at || new Date().toISOString());
+        count++;
+      }
+    })(messages);
+    res.json({ success: true, count });
+  } catch(e) { res.json({ success: false, message: "恢复失败" }); }
+});
 app.delete("/api/messages", authMiddleware, adminMiddleware, (req, res) => { const { startDate, endDate } = req.body; if (!startDate || !endDate) return res.json({ success: false, message: "请提供日期" }); res.json({ success: true, deleted: db.prepare("DELETE FROM messages WHERE DATE(created_at) BETWEEN ? AND ?").run(startDate, endDate).changes }); });
 
 /* SPA fallback — serve index.html for any unmatched route */
 app.get("*", (req, res) => { if (!req.path.startsWith("/api/")) res.sendFile(path.join(__dirname, "public", "index.html")); else res.status(404).json({ error: "Not found" }); });
 
 /* ===== Socket.IO ===== */
-const onlineUsers = new Map(), userSocketMap = new Map();
 io.use((socket, next) => {
   const token = socket.handshake.auth.token; if (!token) return next(new Error("未提供认证信息"));
-  try { const d = jwt.verify(token, JWT_SECRET); const u = db.prepare("SELECT last_login_at FROM users WHERE id=?").get(d.userId); if (u && u.last_login_at && d.loginAt && u.last_login_at !== d.loginAt) return next(new Error("认证失败")); socket.user = d; next(); } catch(e) { next(new Error("认证失败")); }
+  try { socket.user = verifyToken(token); next(); } catch(e) { next(new Error("认证失败")); }
 });
 
 io.on("connection", (socket) => {
@@ -1503,15 +1656,11 @@ io.on("connection", (socket) => {
     if (!content || typeof content !== "string" || content.trim().length === 0) return;
     const chId = parseInt(channelId) || 1;
     if (!canWriteChannel(userId, chId)) return;
-    let trimmed = content.trim().substring(0, 10000);
+    let trimmed = String(content).trim().substring(0, 10000);
     const isChain = trimmed.startsWith("[CHAIN]");
     if (isChain) { try { const cd = JSON.parse(trimmed.substring(7)); if (!cd.type || cd.type !== "chain" || !cd.topic) return; } catch(e) { return; } }
     else {
-      trimmed = trimmed.replace(/<(script|style|iframe|object|embed|link|meta)[^>]*>[\s\S]*?<\/\1>/gi, '');
-      trimmed = trimmed.replace(/<(script|style|iframe|object|embed|link|meta)[^>]*\/?>/gi, '');
-      trimmed = trimmed.replace(/\s+on[a-z]+\s*=\s*["'][^"']*["']/gi, '');
-      trimmed = trimmed.replace(/\s+on[a-z]+\s*=\s*[^\s>]+/gi, '');
-      trimmed = trimmed.replace(/href\s*=\s*["']javascript:[^"']*["']/gi, 'href="#"');
+      trimmed = sanitizeMessageContent(trimmed);
       if (!trimmed.replace(/<[^>]*>/g, '').trim() && !/<br\s*\/?>/i.test(trimmed)) return;
     }
     const safeReplyTo = (Number.isInteger(replyTo) && replyTo > 0) ? replyTo : null;
@@ -1519,7 +1668,7 @@ io.on("connection", (socket) => {
     const result = db.prepare("INSERT INTO messages (user_id,username,content,reply_to,channel_id,created_at) VALUES (?,?,?,?,?,?)").run(userId, socket.user.username, trimmed, safeReplyTo, chId, nowUtc);
     const user = db.prepare("SELECT nickname,avatar FROM users WHERE id=?").get(userId);
     const message = { id: result.lastInsertRowid, username: socket.user.username, nickname: user ? user.nickname : socket.user.username, avatar: user ? user.avatar : null, content: trimmed, type: "text", reply_to: safeReplyTo, channel_id: chId, created_at: nowUtc };
-    io.emit("newMessage", message);
+    io.to("ch:" + chId).emit("newMessage", message);
     let pushText;
     if (isChain) { try { pushText = "[接龙] " + JSON.parse(trimmed.substring(7)).topic; } catch(e) { pushText = "[接龙]"; } }
     else pushText = trimmed.replace(/<[^>]*>/g, '').substring(0, 200);
@@ -1533,6 +1682,7 @@ io.on("connection", (socket) => {
     let chainData; try { chainData = JSON.parse(content.substring(7)); if (!chainData.type || chainData.type !== "chain") return; } catch(e) { return; }
     const origMsg = db.prepare("SELECT id,content,channel_id FROM messages WHERE id=?").get(messageId);
     if (!origMsg || !origMsg.content.startsWith("[CHAIN]")) return;
+    if (!canWriteChannel(userId, origMsg.channel_id)) return;
     let origData; try { origData = JSON.parse(origMsg.content.substring(7)); } catch(e) { return; }
     const username = socket.user.username;
     if (origData.participants && origData.participants.some(p => p.username === username)) return;
@@ -1542,7 +1692,7 @@ io.on("connection", (socket) => {
     origData.participants.push({ seq: origData.participants.length + 1, username, name: myName, text: "" });
     const newContent = "[CHAIN]" + JSON.stringify(origData);
     db.prepare("UPDATE messages SET content=? WHERE id=?").run(newContent, messageId);
-    io.emit("chainUpdated", { messageId, content: newContent, channelId: origMsg.channel_id });
+    io.to("ch:" + origMsg.channel_id).emit("chainUpdated", { messageId, content: newContent, channelId: origMsg.channel_id });
     sendPushToOthers(userId, myName, "[接龙] " + myName + " 参与了: " + origData.topic, origMsg.channel_id);
   });
 
@@ -1915,6 +2065,7 @@ do_new_instance() {
         while true; do
             printf "  请输入此实例的域名 (如 chat2.example.com): "; read -r INST_DOMAIN
             if [ -z "$INST_DOMAIN" ]; then echo -e "${RED}域名不能为空${NC}"; continue; fi
+            validate_domain "$INST_DOMAIN" || continue
             if [[ "$INST_DOMAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
                 echo -e "${YELLOW}这看起来是 IP 地址，如需使用 IP 请选择选项 2${NC}"; continue
             fi
@@ -1950,7 +2101,7 @@ do_new_instance() {
 
     echo ""
     while true; do printf "  管理员用户名 [admin]: "; read -r input; ADMIN_USER=${input:-admin}; validate_input "$ADMIN_USER" "用户名" && break; done
-    while true; do printf "  管理员密码 [admin123]: "; read -r input; ADMIN_PASS=${input:-admin123}; [ ${#ADMIN_PASS} -ge 6 ] && break; echo -e "${RED}密码不能小于6位${NC}"; done
+    read_admin_password
     while true; do printf "  服务端口 (不能与其他实例重复): "; read -r input
         if [ -z "$input" ]; then echo -e "${RED}端口不能为空${NC}"; continue; fi
         PORT="$input"
@@ -2111,7 +2262,7 @@ EOF
     else
         echo -e "  访问: http://${INST_DOMAIN}:${PORT}"
     fi
-    echo -e "  管理员: $ADMIN_USER / $ADMIN_PASS"
+    echo -e "  管理员: $ADMIN_USER"
     echo -e "  PM2 名称: $pm2name"
     echo -e "  数据路径: $inst_dir"
     echo -e "${GREEN}================================================${NC}"
@@ -2380,7 +2531,7 @@ do_install() {
 
     echo ""; echo -e "请配置以下参数:"
     while true; do printf "  管理员用户名 [admin]: "; read -r input; ADMIN_USER=${input:-admin}; validate_input "$ADMIN_USER" "用户名" && break; done
-    while true; do printf "  管理员密码 [admin123]: "; read -r input; ADMIN_PASS=${input:-admin123}; [ ${#ADMIN_PASS} -ge 6 ] && break; echo -e "${RED}密码不能小于6位${NC}"; done
+    read_admin_password
     while true; do printf "  服务端口 [3000]: "; read -r input; PORT=${input:-3000}; [[ "$PORT" =~ ^[0-9]+$ ]] && [ "$PORT" -ge 1 ] && [ "$PORT" -le 65535 ] && break; echo -e "${RED}端口无效${NC}"; done
 
     # 检测现有 SSL 配置
@@ -2397,13 +2548,13 @@ do_install() {
         else
             echo ""; printf "是否配置新的 SSL/HTTPS? (y/n) [n]: "; read -r use_ssl
             if [ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ]; then
-                echo -n "  请输入域名: "; read domain; while [ -z "$domain" ]; do echo -n "  域名不能为空: "; read domain; done
+                while true; do echo -n "  请输入域名: "; read domain; [ -n "$domain" ] && validate_domain "$domain" && break; echo -e "${RED}域名不能为空或格式无效${NC}"; done
             else domain=$DOMAIN; fi
         fi
     else
         echo ""; printf "是否配置 SSL/HTTPS? (y/n) [n]: "; read -r use_ssl
         if [ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ]; then
-            echo -n "  请输入域名: "; read domain; while [ -z "$domain" ]; do echo -n "  域名不能为空: "; read domain; done
+            while true; do echo -n "  请输入域名: "; read domain; [ -n "$domain" ] && validate_domain "$domain" && break; echo -e "${RED}域名不能为空或格式无效${NC}"; done
         else domain=$DOMAIN; fi
     fi
 
@@ -2424,7 +2575,7 @@ do_install() {
     echo -e "${GREEN}================================================${NC}"
     if [ "$use_ssl" = "y" ]||[ "$use_ssl" = "Y" ]; then echo -e "  访问: https://${domain}";
     else echo -e "  访问: http://${domain}:${PORT}"; fi
-    echo -e "  管理员: $ADMIN_USER / $ADMIN_PASS"
+    echo -e "  管理员: $ADMIN_USER"
     echo -e "${GREEN}================================================${NC}"
     echo ""
     echo -e "${YELLOW}📱 推送通知说明:${NC}"
@@ -2463,7 +2614,7 @@ do_modify() {
 
 do_ssl() {
     echo -e "\n${YELLOW}配置 SSL${NC}\n"; detect_os; command -v certbot >/dev/null 2>&1||install_dependencies
-    printf "域名: "; read -r domain; while [ -z "$domain" ]; do printf "不能为空: "; read -r domain; done
+    while true; do printf "域名: "; read -r domain; [ -n "$domain" ] && validate_domain "$domain" && break; echo -e "${RED}域名不能为空或格式无效${NC}"; done
     command -v nginx >/dev/null 2>&1||{ if [ "$OS" = "ubuntu" ]||[ "$OS" = "debian" ]; then apt-get install -y nginx; else yum install -y nginx; fi; }
     local port; port=$(get_current_port)
     [ -f /etc/nginx/sites-enabled/default ]&&rm -f /etc/nginx/sites-enabled/default
