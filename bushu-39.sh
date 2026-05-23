@@ -239,7 +239,7 @@ console.log("✅ PWA 图标已生成");
 
     # ===== Service Worker =====
     cat > "$APP_DIR/public/sw.js" <<'SWEOF'
-var CACHE_NAME = "teamchat-v9-securityfix-20260523";
+var CACHE_NAME = "teamchat-v9-clickfix-20260523";
 var OFFLINE_URLS = ["/", "/index.html", "/images/icon-192.png", "/images/icon-96.png", "/images/default-avatar.svg"];
 self.addEventListener("install", function(e) { e.waitUntil(caches.open(CACHE_NAME).then(function(c) { return c.addAll(OFFLINE_URLS); }).then(function() { return self.skipWaiting(); })); });
 self.addEventListener("activate", function(e) { e.waitUntil(caches.keys().then(function(n) { return Promise.all(n.filter(function(k) { return k !== CACHE_NAME; }).map(function(k) { return caches.delete(k); })); }).then(function() { return self.clients.claim(); })); });
@@ -472,7 +472,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <div id="app"></div>
 <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
 <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
-<script src="/app.js?v=20260523-security"></script>
+<script src="/app.js?v=20260523-clickfix"></script>
 </body>
 </html>
 HTMLEOF
@@ -539,12 +539,17 @@ function clearAuth(){for(const k of['token','username','userId','isAdmin','nickn
 
 /* ===== Socket ===== */
 let socket=null;
+function handleAuthExpired(){
+  if(socket){socket.disconnect();socket=null}
+  clearAuth();
+  if(appInstance&&appInstance.page)appInstance.page.value='login';
+}
 function initSocket(){
   if(socket){socket.disconnect();socket=null}
   socket=io({auth:{token:store.token}});
   socket.on('connect',()=>{if(store.currentChannelId){socket.emit('switchChannel',{channelId:store.currentChannelId});scheduleChatRefresh(80)}});
   socket.io.on('reconnect',()=>scheduleChatRefresh(120));
-  socket.on('connect_error',e=>{if(e.message==='认证失败'||e.message==='未提供认证信息'){alert('登录已过期');clearAuth()}});
+  socket.on('connect_error',e=>{if(e.message==='认证失败'||e.message==='未提供认证信息'){handleAuthExpired()}});
   socket.on('newMessage',msg=>{
     const ch=ensureMsgChannel(msg.channel_id);
     if(!ch.msgs.find(m=>m.id===msg.id)){ch.msgs.push(msg);if(msg.channel_id===store.currentChannelId)nextTick(()=>scrollBottom())}
@@ -591,8 +596,7 @@ async function loadMessages(channelId,before,force){
   if(!before&&force&&ch.msgs.length)url=API+'/api/messages?channelId='+channelId+'&limit=200&after='+ch.msgs[ch.msgs.length-1].id;
   if(before&&ch.oldest)url+='&before='+ch.oldest;
   try{
-    const r=await fetch(url,{headers:authH(),'cache':'no-store'});if(r.status===401){clearAuth();return}
-    if(r.status===403)return;
+    const r=await fetch(url,{headers:authH(),'cache':'no-store'});if(r.status===401||r.status===403){handleAuthExpired();return 0}
     const msgs=await r.json();
     if(before&&msgs.length<50)ch.allLoaded=true;
     if(!before&&msgs.length<50&&!ch.msgs.length)ch.allLoaded=true;
@@ -607,7 +611,7 @@ async function refreshCurrentChannel(){
   if(!store.token)return;
   if(refreshPromise)return refreshPromise;
   refreshPromise=(async()=>{
-    await loadChannels();
+    const channelsOk=await loadChannels();if(channelsOk===false)return;
     if(!store.currentChannelId&&store.channels.length)store.currentChannelId=store.channels[0].id;
     if(store.currentChannelId){
       let loops=0,got=0;
@@ -625,7 +629,12 @@ function scheduleChatRefresh(delay){
 
 /* ===== Channel operations ===== */
 async function loadChannels(){
-  try{const r=await fetch(API+'/api/channels',{headers:authH(),'cache':'no-store'});if(r.ok){const unread=new Map(store.channels.map(c=>[c.id,c._unread||0]));const chs=await r.json();store.channels=chs.map(c=>({...c,_unread:unread.get(c.id)||0}))}}catch(e){}
+  try{
+    const r=await fetch(API+'/api/channels',{headers:authH(),'cache':'no-store'});
+    if(r.status===401||r.status===403){handleAuthExpired();return false}
+    if(r.ok){const unread=new Map(store.channels.map(c=>[c.id,c._unread||0]));const chs=await r.json();store.channels=chs.map(c=>({...c,_unread:unread.get(c.id)||0}))}
+  }catch(e){}
+  return true;
 }
 async function switchChannel(id){
   store.currentChannelId=id;localStorage.setItem('currentChannelId',id);
@@ -740,7 +749,7 @@ const App={
     });
 
     async function enterChat(){
-      page.value='chat';initSocket();await loadChannels();
+      page.value='chat';initSocket();const channelsOk=await loadChannels();if(channelsOk===false)return;
       if(!store.currentChannelId&&store.channels.length)store.currentChannelId=store.channels[0].id;
       if(store.currentChannelId)await switchChannel(store.currentChannelId);
     }
@@ -805,7 +814,7 @@ const App={
       currentChannel,currentMessages,onlineSet,channelMembers,ctxMenu,
       doLogin,doRegister,logout,sendMsg,handleKey,insertNewline,autoGrow,uploadFile,sendChain,joinChain,parseChain,loadMore,showCtx,setReply,
       switchChannel:async(id)=>{sidebarOpen.value=false;await switchChannel(id)},
-      store,msgStore,API,esc,fmtTime,fmtSize,avatarUrl,imageSrc,sanitize,
+      store,msgStore,API,esc,fmtTime,fmtSize,avatarUrl,imageSrc,sanitize,document,
       togglePush,checkPush}
   },
   template:`
@@ -1017,7 +1026,43 @@ const App={
     <label class="field-label">聊天标题</label><input id="appCT" type="text" :value="store.appearance.chat_title||''" placeholder="团队聊天" maxlength="30"></div>
     <div class="section"><label class="field-label">发送按钮文字</label><input id="appST" type="text" :value="store.appearance.send_text||''" placeholder="发送" maxlength="10">
     <label class="field-label">发送按钮颜色</label><div class="color-row"><input type="color" id="appSC" :value="store.appearance.send_color||'#667eea'"><span id="appSCH" style="font-size:13px;color:#666">{{store.appearance.send_color||'#667eea'}}</span></div></div>
-    <div class="section"><label class="field-label">聊天背景颜色</label><div class="color-row"><input type="color" id="appBG" :value="store.appearance.bg_color||'#f0f2f5'"><span style="font-size:13px;color:#666">{{store.appearance.bg_color||'#f0f2f5'}}</span></div></div>
+    <div class="section">
+      <h4>聊天背景</h4>
+      <div class="radio-group">
+        <label><input type="radio" name="bgType" value="color" :checked="!store.appearance.bg_type||store.appearance.bg_type==='color'" @change="modalData._bgType='color'"> 纯色</label>
+        <label><input type="radio" name="bgType" value="image" :checked="store.appearance.bg_type==='image'" @change="modalData._bgType='image'"> 图片</label>
+      </div>
+      <div>
+        <label class="field-label">背景颜色</label><div class="color-row"><input type="color" id="appBG" :value="store.appearance.bg_color||'#f0f2f5'"><span style="font-size:13px;color:#666">{{store.appearance.bg_color||'#f0f2f5'}}</span></div>
+      </div>
+      <div v-if="modalData._bgType==='image'" style="margin-top:8px">
+        <label class="field-label">背景图片</label>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="text" id="appBgImg" :value="store.appearance.bg_image||''" placeholder="点击上传图片" readonly style="flex:1"><button @click="$refs.bgFileInput.click()" style="width:auto;padding:6px 12px;margin:0;font-size:12px">上传</button></div>
+        <input type="file" accept="image/*" hidden ref="bgFileInput" @change="doBgUpload($event,'bg')">
+        <label class="field-label">显示方式</label>
+        <div class="radio-group">
+          <label><input type="radio" name="bgMode" value="cover" :checked="!store.appearance.bg_mode||store.appearance.bg_mode==='cover'" @change="modalData._bgMode='cover'"> 覆盖</label>
+          <label><input type="radio" name="bgMode" value="tile" :checked="store.appearance.bg_mode==='tile'" @change="modalData._bgMode='tile'"> 平铺</label>
+        </div>
+      </div>
+    </div>
+    <div class="section">
+      <h4>登录页背景</h4>
+      <div class="radio-group">
+        <label><input type="radio" name="loginBgType" value="gradient" :checked="!store.appearance.login_bg_type||store.appearance.login_bg_type==='gradient'" @change="modalData._loginBgType='gradient'"> 渐变色</label>
+        <label><input type="radio" name="loginBgType" value="color" :checked="store.appearance.login_bg_type==='color'" @change="modalData._loginBgType='color'"> 纯色</label>
+        <label><input type="radio" name="loginBgType" value="image" :checked="store.appearance.login_bg_type==='image'" @change="modalData._loginBgType='image'"> 图片</label>
+      </div>
+      <div>
+        <label class="field-label">渐变起始色</label><div class="color-row"><input type="color" id="appLBG1" :value="store.appearance.login_bg_color1||'#667eea'"><span style="font-size:13px;color:#666">{{store.appearance.login_bg_color1||'#667eea'}}</span></div>
+        <label class="field-label">渐变结束色</label><div class="color-row"><input type="color" id="appLBG2" :value="store.appearance.login_bg_color2||'#764ba2'"><span style="font-size:13px;color:#666">{{store.appearance.login_bg_color2||'#764ba2'}}</span></div>
+      </div>
+      <div v-if="modalData._loginBgType==='image'" style="margin-top:8px">
+        <label class="field-label">登录页背景图</label>
+        <div style="display:flex;gap:6px;align-items:center;margin-bottom:8px"><input type="text" id="appLoginBgImg" :value="store.appearance.login_bg_image||''" placeholder="点击上传图片" readonly style="flex:1"><button @click="$refs.loginBgInput.click()" style="width:auto;padding:6px 12px;margin:0;font-size:12px">上传</button></div>
+        <input type="file" accept="image/*" hidden ref="loginBgInput" @change="doBgUpload($event,'login')">
+      </div>
+    </div>
     <button @click="doSaveAppearance()">💾 保存并应用</button><p id="appearMsg" style="font-size:13px;text-align:center"></p>
     <button class="close-btn" @click="currentModal='settings'">返回</button>
   </div>
@@ -1116,9 +1161,31 @@ const App={
       try{const r=await fetch(API+'/api/settings/notice',{method:'POST',headers:authH({'Content-Type':'application/json'}),body:JSON.stringify({content:c,enabled:true})});const d=await r.json();m.textContent=d.success?'✅ 已发布':'失败'}catch(e){m.textContent='失败'}
     },
     async doClearNotice(){try{await fetch(API+'/api/settings/notice',{method:'POST',headers:authH({'Content-Type':'application/json'}),body:JSON.stringify({content:'',enabled:false})});document.getElementById('noticeMsg').textContent='✅ 已撤下'}catch(e){}},
+    async doBgUpload(e,type){
+      const f=e.target.files[0];if(!f)return;
+      const fd=new FormData();fd.append('bg',f);
+      try{const r=await fetch(API+'/api/upload-bg',{method:'POST',headers:{'Authorization':'Bearer '+store.token},body:fd});const d=await r.json();
+        if(d.success){if(type==='bg')document.getElementById('appBgImg').value=d.filename;else if(type==='login')document.getElementById('appLoginBgImg').value=d.filename}else alert(d.message||'上传失败')}catch(e){alert('上传失败')}
+    },
     async doSaveAppearance(){
-      const b={login_title:document.getElementById('appLT').value,chat_title:document.getElementById('appCT').value,send_text:document.getElementById('appST').value,send_color:document.getElementById('appSC').value,bg_color:document.getElementById('appBG').value};
-      try{const r=await fetch(API+'/api/settings/appearance',{method:'POST',headers:authH({'Content-Type':'application/json'}),body:JSON.stringify(b)});const d=await r.json();document.getElementById('appearMsg').textContent=d.success?'✅ 已保存':'失败'}catch(e){document.getElementById('appearMsg').textContent='失败'}
+      const bgType=modalData._bgType||store.appearance.bg_type||'color';
+      const bgMode=modalData._bgMode||store.appearance.bg_mode||'cover';
+      const loginBgType=modalData._loginBgType||store.appearance.login_bg_type||'gradient';
+      const bgImg=document.getElementById('appBgImg')?document.getElementById('appBgImg').value:(store.appearance.bg_image||'');
+      const loginBgImg=document.getElementById('appLoginBgImg')?document.getElementById('appLoginBgImg').value:(store.appearance.login_bg_image||'');
+      const b={
+        login_title:document.getElementById('appLT').value,
+        chat_title:document.getElementById('appCT').value,
+        send_text:document.getElementById('appST').value,
+        send_color:document.getElementById('appSC').value,
+        bg_color:document.getElementById('appBG').value,
+        bg_type:bgType,bg_image:bgImg,bg_mode:bgMode,
+        login_bg_type:loginBgType,
+        login_bg_color1:document.getElementById('appLBG1')?document.getElementById('appLBG1').value:'#667eea',
+        login_bg_color2:document.getElementById('appLBG2')?document.getElementById('appLBG2').value:'#764ba2',
+        login_bg_image:loginBgImg,login_bg_mode:'cover'
+      };
+      try{const r=await fetch(API+'/api/settings/appearance',{method:'POST',headers:authH({'Content-Type':'application/json'}),body:JSON.stringify(b)});const d=await r.json();if(d.success){document.getElementById('appearMsg').textContent='✅ 已保存';await loadAppearance()}else{document.getElementById('appearMsg').textContent='失败'}}catch(e){document.getElementById('appearMsg').textContent='失败'}
     },
     async doExportBackup(){const s=document.getElementById('bkStart').value,e=document.getElementById('bkEnd').value;let url=API+'/api/backup?';if(s&&e)url+='startDate='+s+'&endDate='+e;try{const r=await fetch(url,{headers:authH()});const d=await r.json();const bl=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(bl);a.download='teamchat-backup.json';a.click()}catch(e){document.getElementById('backupMsg').textContent='导出失败'}},
     async doRestoreBackup(){const f=document.getElementById('restoreFile').files[0];if(!f)return;const t=await f.text();try{const d=JSON.parse(t);const r=await fetch(API+'/api/restore',{method:'POST',headers:authH({'Content-Type':'application/json'}),body:JSON.stringify(d)});const res=await r.json();document.getElementById('backupMsg').textContent=res.success?'✅ 还原 '+res.count+' 条':'失败'}catch(e){document.getElementById('backupMsg').textContent='格式错误'}},
@@ -1167,6 +1234,7 @@ const App={
     /* Push init after settings open */
     this.$watch(()=>this.currentModal,async(v)=>{
       if(v==='settings'){await nextTick();const st=await checkPush();document.getElementById('pushInfo').textContent=st.subscribed?'✅ 推送已开启':st.reason||'推送未开启';const btn=document.getElementById('pushBtn');if(st.supported){btn.style.display='block';btn.textContent=st.subscribed?'关闭推送':'开启推送';btn.style.background=st.subscribed?'#dc2626':'#667eea'}}
+      if(v==='appearance'){modalData._bgType=store.appearance.bg_type||'color';modalData._bgMode=store.appearance.bg_mode||'cover';modalData._loginBgType=store.appearance.login_bg_type||'gradient'}
     });
   }
 };
